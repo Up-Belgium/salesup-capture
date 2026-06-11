@@ -1,0 +1,20 @@
+{
+  "name": "salesup-capture-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "salesUp Capture — desktop-app: botloze meeting-opname (Plaud-principe), met automatische meetingdetectie",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "be.salesup.capture.desktop",
+    "productName": "salesUp Capture",
+    "mac": { "category": "public.app-category.business" }
+  }
+}

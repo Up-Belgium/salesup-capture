@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "salesUp Capture",
+    "slug": "salesup-capture",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "salesupcapture",
+    "splash": {
+      "backgroundColor": "#1a2540"
+    },
+    "ios": {
+      "bundleIdentifier": "be.salesup.capture",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden.",
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "package": "be.salesup.capture",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden."
+        }
+      ]
+    ]
+  }
+}
