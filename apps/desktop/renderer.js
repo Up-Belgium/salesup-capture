@@ -17,6 +17,8 @@ let seconds = 0;
 let timerHandle = null;
 let detectedPlatform = null;
 let autoStarted = false;   // opname gestart door meetingdetectie (staande consent)
+let hasRecallSdk = false;  // Recall Desktop SDK aanwezig in de main-process?
+const recallSt = { windowId: null, recordingId: null, active: false, title: null };
 
 // ── Auth (plain fetch — geen SDK nodig in de renderer) ──────────────────────
 async function authFetch(path, body) {
@@ -88,8 +90,10 @@ async function startRecording(opts = {}) {
     setMsg('mainMsg', 'Bevestig eerst de consent-verklaring.', 'err');
     return;
   }
-  if (opts.auto && (!$('autorec').checked || mediaRecorder?.state === 'recording')) return;
+  if (opts.auto && (!$('autorec').checked || mediaRecorder?.state === 'recording' || recallSt.active)) return;
   autoStarted = !!opts.auto;
+  // Recall-modus: gedetecteerde meeting + SDK aanwezig → systeemaudio-opname
+  if (hasRecallSdk && recallSt.windowId && !recallSt.active) return recallBegin();
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   chunks = [];
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -178,7 +182,85 @@ $('loginBtn').addEventListener('click', async () => {
 });
 
 $('startBtn').addEventListener('click', () => startRecording().catch((e) => setMsg('mainMsg', e.message, 'err')));
-$('stopBtn').addEventListener('click', () => stopAndUpload());
+$('stopBtn').addEventListener('click', () => {
+  if (recallSt.active) {
+    setMsg('recMsg', 'Opname stoppen en verwerken…', 'ok');
+    window.capture.recallStop({ windowId: recallSt.windowId }).catch((e) => setMsg('recMsg', e.message, 'err'));
+  } else {
+    stopAndUpload();
+  }
+});
+
+// ── Recall-modus (systeemaudio via Desktop SDK) ─────────────────────────────
+async function recallBegin() {
+  const json = await ingest('recall_start', {
+    org_id: $('client').value || (ctx.orgs[0] && ctx.orgs[0].id),
+    meeting_platform: detectedPlatform,
+    title: $('title').value || recallSt.title || null,
+    started_at: new Date().toISOString(),
+  });
+  recallSt.recordingId = json.recording_id;
+  await window.capture.recallStart({ windowId: recallSt.windowId, uploadToken: json.upload_token });
+  recallSt.active = true;
+  seconds = 0;
+  $('timer').style.display = 'block';
+  timerHandle = setInterval(() => {
+    seconds += 1;
+    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const ss = String(seconds % 60).padStart(2, '0');
+    $('timer').textContent = `${mm}:${ss}`;
+  }, 1000);
+  window.capture.setRecordingState('recording');
+  show('recView');
+}
+
+window.capture.onRecallMeetingDetected(({ windowId, platform }) => {
+  detectedPlatform = platform;
+  recallSt.windowId = windowId;
+  setMsg('hint', `${platform}-meeting gedetecteerd — klaar om op te nemen (systeemaudio).`, 'hint');
+  if ($('autorec').checked && $('mainView').style.display === 'block' && !recallSt.active) {
+    startRecording({ auto: true }).catch((e) => setMsg('mainMsg', e.message, 'err'));
+  }
+});
+
+window.capture.onRecallMeetingUpdated(({ windowId, title }) => {
+  if (windowId === recallSt.windowId) recallSt.title = title;
+});
+
+window.capture.onRecallRecordingEnded(async ({ windowId, segments }) => {
+  if (windowId !== recallSt.windowId || !recallSt.recordingId) return;
+  clearInterval(timerHandle);
+  window.capture.setRecordingState('idle');
+  try {
+    await ingest('complete', {
+      recording_id: recallSt.recordingId,
+      ended_at: new Date().toISOString(),
+      duration_seconds: seconds,
+      consent_status: 'informed',
+      consent_method: 'app_notice',
+      consent_details: autoStarted
+        ? 'Automatisch gestart bij meetingdetectie (Recall SDK); staande consent-instelling actief.'
+        : 'Bevestigd in de desktop-app vóór de start van de opname (Recall SDK).',
+    });
+    if (Array.isArray(segments) && segments.length > 0) {
+      await ingest('recall_transcript', { recording_id: recallSt.recordingId, segments });
+      setMsg('mainMsg', 'Meeting opgenomen en transcript verstuurd — verslag volgt per mail.', 'ok');
+    } else {
+      setMsg('mainMsg', 'Meeting opgenomen; geen realtime-transcript ontvangen (verwerking volgt via Recall).', 'hint');
+    }
+  } catch (e) {
+    setMsg('mainMsg', `Verwerken mislukt: ${e.message}`, 'err');
+  } finally {
+    recallSt.windowId = null; recallSt.recordingId = null; recallSt.active = false; recallSt.title = null;
+    autoStarted = false;
+    $('consent').checked = false;
+    $('title').value = '';
+    $('timer').style.display = 'none';
+    show('mainView');
+  }
+});
+
+window.capture.onRecallError(({ message }) => setMsg('mainMsg', `Recall SDK: ${message}`, 'err'));
 $('logout').addEventListener('click', (e) => {
   e.preventDefault();
   session = null;
@@ -216,6 +298,7 @@ $('autorec').addEventListener('change', () => {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
+  try { hasRecallSdk = await window.capture.recallAvailable(); } catch (_) { hasRecallSdk = false; }
   try {
     const stored = localStorage.getItem('capture.session');
     if (stored) {

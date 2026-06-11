@@ -10,7 +10,10 @@
 //      → mag alles, incl. action 'transcript'.
 //
 // Acties: context | start | complete | transcript
-// Secrets: CAPTURE_INGEST_SECRET (alleen nodig voor pad 3)
+//         recall_start (sdk_upload aanmaken) | recall_transcript (realtime-
+//         transcript uit de Recall Desktop SDK, alleen eigen-org-opnames)
+// Secrets: CAPTURE_INGEST_SECRET (pad 3) · RECALL_API_KEY + RECALL_API_URL
+//          (alleen voor recall_start; URL default us-west-2)
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -149,6 +152,86 @@ Deno.serve(async (req) => {
           })
         }
         console.log(`ingest: complete ${body.recording_id} (via ${caller.kind})`)
+        return json({ ok: true })
+      }
+
+      case 'recall_start': {
+        // Recall.ai Desktop SDK: server-side sdk_upload aanmaken (key blijft
+        // server-side) en koppelen aan een recordings-rij. App ontvangt het
+        // upload_token en start de SDK-opname (volledige systeemaudio).
+        if (caller.kind !== 'user') return json({ ok: false, error: 'recall_start is alleen voor ingelogde gebruikers' }, 403)
+        const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
+        if (!recallKey) return json({ ok: false, error: 'RECALL_API_KEY niet gezet als Edge Function secret' }, 500)
+        const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://us-west-2.recall.ai').trim()
+
+        let orgId = body.org_id
+        if (!orgId && caller.orgIds?.length === 1) orgId = caller.orgIds[0]
+        if (!orgId || !orgAllowed(orgId)) return json({ ok: false, error: 'geen toegang tot deze organisatie' }, 403)
+
+        const res = await fetch(`${recallUrl}/api/v1/sdk_upload/`, {
+          method: 'POST',
+          headers: { Authorization: `Token ${recallKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recording_config: {
+              transcript: { provider: { assembly_ai_v3_streaming: {} } },
+              realtime_endpoints: [{
+                type: 'desktop_sdk_callback',
+                events: ['transcript.data', 'participant_events.join'],
+              }],
+            },
+          }),
+        })
+        if (!res.ok) throw new Error(`Recall ${res.status}: ${(await res.text()).slice(0, 200)}`)
+        const sdkUpload = await res.json()
+
+        const { data: rec, error } = await sb.from('recordings').insert({
+          org_id:           orgId,
+          member_id:        caller.memberByOrg?.[orgId] ?? null,
+          recording_type:   'video_meeting',
+          meeting_platform: body.meeting_platform ?? null,
+          title:            body.title ?? null,
+          started_at:       body.started_at ?? new Date().toISOString(),
+          external_ref:     String(sdkUpload.id ?? ''),
+        }).select('id').single()
+        if (error) throw new Error(error.message)
+
+        console.log(`ingest: recall_start ${rec.id} (org ${orgId}, sdk_upload ${sdkUpload.id})`)
+        return json({ ok: true, recording_id: rec.id, upload_token: sdkUpload.upload_token })
+      }
+
+      case 'recall_transcript': {
+        // Realtime-transcript uit de Recall SDK (in de app verzameld).
+        // Alleen voor eigen-org-opnames die via recall_start zijn aangemaakt.
+        if (caller.kind === 'secret') return json({ ok: false, error: 'gebruik action transcript voor het secret-pad' }, 400)
+        if (!body.recording_id || !Array.isArray(body.segments) || body.segments.length === 0) {
+          return json({ ok: false, error: 'recording_id en segments verplicht' }, 400)
+        }
+        const { data: rec } = await sb.from('recordings')
+          .select('id, org_id, external_ref').eq('id', body.recording_id).maybeSingle()
+        if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
+        if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
+        if (!rec.external_ref) return json({ ok: false, error: 'geen Recall-opname (external_ref ontbreekt)' }, 400)
+
+        const segments = body.segments
+          .map((s: any) => ({
+            speaker: s?.speaker ? String(s.speaker) : null,
+            start_s: typeof s?.start_s === 'number' ? s.start_s : null,
+            end_s:   typeof s?.end_s === 'number' ? s.end_s : null,
+            text:    String(s?.text ?? '').trim(),
+          }))
+          .filter((s: any) => s.text.length > 0)
+        const fullText = segments
+          .map((s: any) => (s.speaker ? `${s.speaker}: ${s.text}` : s.text)).join('\n')
+
+        const { error } = await sb.rpc('register_transcript', {
+          p_recording_id: body.recording_id,
+          p_full_text:    fullText,
+          p_segments:     segments,
+          p_language:     body.language ?? null,
+          p_provider:     'recall_sdk',
+        })
+        if (error) throw new Error(error.message)
+        console.log(`ingest: recall_transcript ${body.recording_id} (${segments.length} segmenten, via ${caller.kind})`)
         return json({ ok: true })
       }
 
