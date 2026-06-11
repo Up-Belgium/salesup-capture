@@ -31,17 +31,20 @@ npm run dist       # installers (dmg/exe) via electron-builder
 macOS vraagt bij de eerste opname om microfoontoegang (Systeeminstellingen →
 Privacy → Microfoon).
 
-## Upgradepad: Recall.ai Desktop Recording SDK (de "volwaardige" fase 2)
+## Recall-modus (volledige systeemaudio + Google Meet) — INGEBOUWD
 
-De MVP vangt met een headset alleen de eigen spreker. De structurele oplossing is de
-[Recall.ai Desktop Recording SDK](https://www.recall.ai/product/desktop-recording-sdk)
-($0,50/opname-uur): volledige systeemaudio + per-spreker transcript + betrouwbare
-meetingdetectie voor Zoom/Meet/Teams/Webex/Slack, zonder bot. Integratiepunten zijn
-er al:
+De [Recall Desktop SDK](https://www.recall.ai/product/desktop-recording-sdk)-integratie
+($0,50/opname-uur) zit volledig in de code: backend-acties `recall_start` (maakt
+server-side het sdk_upload-token, key blijft geheim) en `recall_transcript`
+(realtime-transcript), plus de SDK-afhandeling in `main.js`. De app kiest automatisch:
+SDK-package aanwezig → Recall-modus (systeemaudio, detectie van Zoom/**Google Meet**/
+Teams/Slack, per-spreker transcript zonder eigen ASR-stap); afwezig → de
+microfoon-fallback hierboven. Activeren:
 
-1. Recall-webhook → edge function `ingest-recording`, action `transcript` met header
-   `X-Capture-Secret` (dan is zelfs onze eigen ASR-stap niet nodig).
-2. `meeting_platform` en `external_ref` (Recall recording-id) bestaan al als kolommen.
-
-Nodig van Stig: Recall.ai-account + API-key, en `CAPTURE_INGEST_SECRET` als Edge
-Function secret.
+1. Zet `RECALL_API_KEY` als Edge Function secret op het Supabase-project
+   `salesup-capture` (en `RECALL_API_URL` als je key niet in us-west-2 staat —
+   check de regio in je Recall-dashboard).
+2. In deze map: `npm install @recallai/desktop-sdk`, dan `npm start`
+   (of `npm run dist` voor een nieuwe .app).
+3. Recall-opnames gaan met provider `recall_sdk` rechtstreeks de pipeline in;
+   Deepgram wordt voor die opnames overgeslagen, samenvatting + mail werken identiek.
