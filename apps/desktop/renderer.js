@@ -16,6 +16,7 @@ let chunks = [];
 let seconds = 0;
 let timerHandle = null;
 let detectedPlatform = null;
+let autoStarted = false;   // opname gestart door meetingdetectie (staande consent)
 
 // ── Auth (plain fetch — geen SDK nodig in de renderer) ──────────────────────
 async function authFetch(path, body) {
@@ -66,6 +67,7 @@ function show(view) {
 
 async function enterMain() {
   ctx = await ingest('context', {});
+  $('autorec').checked = localStorage.getItem('capture.autorec') === '1';
   const sel = $('client');
   sel.innerHTML = '';
   for (const c of ctx.orgs) {
@@ -79,11 +81,15 @@ async function enterMain() {
 }
 
 // ── Opname ───────────────────────────────────────────────────────────────────
-async function startRecording() {
-  if (!$('consent').checked) {
+async function startRecording(opts = {}) {
+  // handmatig: per-gesprek consent-vink; automatisch: de staande
+  // autorec-instelling ís de consentbevestiging (zie label in de UI)
+  if (!opts.auto && !$('consent').checked) {
     setMsg('mainMsg', 'Bevestig eerst de consent-verklaring.', 'err');
     return;
   }
+  if (opts.auto && (!$('autorec').checked || mediaRecorder?.state === 'recording')) return;
+  autoStarted = !!opts.auto;
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   chunks = [];
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -135,7 +141,9 @@ async function stopAndUpload() {
       duration_seconds: seconds,
       consent_status: 'informed',
       consent_method: 'app_notice',
-      consent_details: 'Bevestigd in de desktop-app vóór de start van de opname.',
+      consent_details: autoStarted
+        ? 'Automatisch gestart bij meetingdetectie; staande consent-instelling actief.'
+        : 'Bevestigd in de desktop-app vóór de start van de opname.',
     });
     setMsg('mainMsg', 'Opname verstuurd — transcriptie en analyse volgen automatisch.', 'ok');
   } catch (e) {
@@ -144,6 +152,7 @@ async function stopAndUpload() {
     $('consent').checked = false;
     $('title').value = '';
     detectedPlatform = null;
+    autoStarted = false;
     $('timer').style.display = 'none';
     show('mainView');
   }
@@ -179,16 +188,30 @@ $('logout').addEventListener('click', (e) => {
 
 window.capture.onMeetingDetected(({ platform }) => {
   detectedPlatform = platform;
-  if ($('mainView').style.display === 'block') startRecording().catch(() => {});
+  if ($('mainView').style.display === 'block') startRecording({ auto: true }).catch(() => {});
 });
 window.capture.onMeetingHint(({ platform }) => {
   detectedPlatform = platform;
   setMsg('hint', `${platform}-meeting gedetecteerd — klaar om op te nemen.`, 'hint');
+  // volautomatisch: staande autorec-instelling + ingelogd → meteen starten
+  if ($('autorec').checked && $('mainView').style.display === 'block') {
+    startRecording({ auto: true }).catch(() => {});
+  }
 });
 window.capture.onMeetingEnded(() => {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
-    setMsg('recMsg', 'Meeting-app gestopt — vergeet niet op "Stop & verstuur" te klikken.', 'hint');
+    if (autoStarted) {
+      // automatisch gestart → ook automatisch stoppen en versturen
+      stopAndUpload();
+    } else {
+      setMsg('recMsg', 'Meeting-app gestopt — vergeet niet op "Stop & verstuur" te klikken.', 'hint');
+    }
   }
+});
+
+// autorec-voorkeur bewaren
+$('autorec').addEventListener('change', () => {
+  localStorage.setItem('capture.autorec', $('autorec').checked ? '1' : '');
 });
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

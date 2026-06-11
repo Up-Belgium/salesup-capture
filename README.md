@@ -25,8 +25,8 @@ supabase/
   functions/transcribe-recordings   Deepgram, cron */10
   functions/summarize-email    Claude + Resend, cron 5-55/10
   functions/bridge-to-training doorzet naar trainingsproject, cron :25
-  cron/setup_vault_secret.sql  eenmalig: service-key in de vault (vereist voor crons)
-  seed_first_org.sql           eenmalig: eerste organisatie + owner
+  cron/setup_vault_secret.sql  niet meer nodig (crons draaien via anon-JWT); referentie
+  seed_first_org.sql           eenmalig: eerste organisatie + owner (salesUp = gedaan)
 apps/
   mobile/                      Expo-app (iOS + Android)
   desktop/                     Electron tray-app (meetingdetectie, geen bot)
@@ -48,8 +48,9 @@ Vereiste Edge Function secrets (Dashboard → Edge Functions → Secrets):
 | `TRAINING_URL` + `TRAINING_SERVICE_ROLE_KEY` | brug naar trainingsplatform | alleen voor de brug |
 | `CAPTURE_INGEST_SECRET` | Recall/integratie-webhooks | alleen voor integraties |
 
-Plus eenmalig: `supabase/cron/setup_vault_secret.sql` (crons) en
-`supabase/seed_first_org.sql` (eerste org + owner) in de SQL-editor.
+De crons draaien automatisch (anon-JWT als Bearer — geen vault-stap nodig). Nieuwe
+organisaties/leden maak je aan naar het voorbeeld van `supabase/seed_first_org.sql`.
+
 
 ## Beveiliging
 
