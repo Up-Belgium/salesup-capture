@@ -18,6 +18,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const BUCKET = 'recordings'
 const EXT_OK = ['m4a', 'mp3', 'wav', 'webm', 'mp4', 'aac', 'ogg']
 
+// CORS: browser-clients (Expo web / Replit) sturen een OPTIONS-preflight
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-device-token, x-capture-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 interface Caller {
   kind: 'secret' | 'user' | 'device'
   memberId?: string | null
@@ -63,6 +70,8 @@ async function resolveCaller(req: Request, sb: any): Promise<Caller | null> {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+
   const sb = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -171,6 +180,6 @@ Deno.serve(async (req) => {
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
   })
 }
