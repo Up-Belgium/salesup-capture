@@ -162,7 +162,8 @@ Deno.serve(async (req) => {
         if (caller.kind !== 'user') return json({ ok: false, error: 'recall_start is alleen voor ingelogde gebruikers' }, 403)
         const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
         if (!recallKey) return json({ ok: false, error: 'RECALL_API_KEY niet gezet als Edge Function secret' }, 500)
-        const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://us-west-2.recall.ai').trim()
+        // Stigs Recall-account is in de EU-regio aangemaakt (2026-06-11)
+        const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://eu-central-1.recall.ai').trim()
 
         let orgId = body.org_id
         if (!orgId && caller.orgIds?.length === 1) orgId = caller.orgIds[0]
@@ -173,7 +174,9 @@ Deno.serve(async (req) => {
           headers: { Authorization: `Token ${recallKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             recording_config: {
-              transcript: { provider: { assembly_ai_v3_streaming: {} } },
+              // Recall's eigen transcriptie: geen externe provider-credentials
+              // nodig; accuracy-modus + auto-taal (Nederlands wordt herkend).
+              transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
               realtime_endpoints: [{
                 type: 'desktop_sdk_callback',
                 events: ['transcript.data', 'participant_events.join'],

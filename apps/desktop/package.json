@@ -15,6 +15,11 @@
   "build": {
     "appId": "be.salesup.capture.desktop",
     "productName": "salesUp Capture",
-    "mac": { "category": "public.app-category.business" }
+    "mac": {
+      "category": "public.app-category.business"
+    }
+  },
+  "dependencies": {
+    "@recallai/desktop-sdk": "^2.0.18"
   }
 }

@@ -14,9 +14,8 @@ const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain } = r
 const { exec } = require('child_process');
 const path = require('path');
 
-// Regio van je Recall-account (us-west-2 is de default bij Recall;
-// pas aan als je key in een andere regio is aangemaakt).
-const RECALL_SDK_API_URL = process.env.RECALL_API_URL || 'https://us-west-2.recall.ai';
+// Regio van je Recall-account — EU (account aangemaakt 2026-06-11).
+const RECALL_SDK_API_URL = process.env.RECALL_API_URL || 'https://eu-central-1.recall.ai';
 
 let RecallAiSdk = null;
 try { RecallAiSdk = require('@recallai/desktop-sdk'); } catch (_) { /* fallback-modus B */ }
