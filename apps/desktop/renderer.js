@@ -266,13 +266,19 @@ const PERM_NL = {
   'accessibility': 'Toegankelijkheid', 'screen-capture': 'Schermopname',
   'microphone': 'Microfoon', 'system-audio': 'Systeemaudio', 'full-disk-access': 'Volledige schijftoegang',
 };
+// Status van álle permissies live tonen — macOS-vinkjes van een vorige build
+// gelden niet voor een nieuwe build (ongesigneerde app), dus zichtbaarheid is alles.
+const permState = {};
 window.capture.onRecallPermission(({ permission, status }) => {
-  const ok = String(status).toLowerCase() === 'granted';
-  if (!ok) {
-    setMsg('hint',
-      `Permissie "${PERM_NL[permission] || permission}" ontbreekt (${status}) — geef toegang via Systeeminstellingen → Privacy & Beveiliging, en herstart de app. Zonder deze permissie worden meetings niet gedetecteerd.`,
-      'err');
-  }
+  permState[permission] = String(status).toLowerCase();
+  const parts = Object.entries(permState).map(([p, s]) =>
+    `${PERM_NL[p] || p} ${s === 'granted' ? '✓' : `✗ (${s})`}`);
+  const allOk = Object.values(permState).every((s) => s === 'granted');
+  setMsg('hint',
+    `Permissies: ${parts.join(' · ')}${allOk
+      ? ' — alles in orde, meetings worden automatisch gedetecteerd.'
+      : '. Zet de ontbrekende toe in Systeeminstellingen → Privacy & Beveiliging (verwijder eerst een eventueel oud "salesUp Capture"-item met de min-knop) en herstart daarna de app.'}`,
+    allOk ? 'hint' : 'err');
 });
 $('logout').addEventListener('click', (e) => {
   e.preventDefault();
