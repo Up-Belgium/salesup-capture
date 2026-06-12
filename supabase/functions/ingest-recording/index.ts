@@ -202,6 +202,65 @@ Deno.serve(async (req) => {
         return json({ ok: true, recording_id: rec.id, upload_token: sdkUpload.upload_token })
       }
 
+      case 'bot_start': {
+        // Zichtbare meeting-bot (Leexi-model): geen installatie per gebruiker.
+        // De bot joint de meeting, neemt op in de Recall-cloud; poll-bots haalt
+        // daarna het transcript op. De zichtbare bot geldt als consent-melding
+        // richting alle deelnemers.
+        if (caller.kind !== 'user') return json({ ok: false, error: 'bot_start is alleen voor ingelogde gebruikers' }, 403)
+        const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
+        if (!recallKey) return json({ ok: false, error: 'RECALL_API_KEY niet gezet als Edge Function secret' }, 500)
+        const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://eu-central-1.recall.ai').trim()
+
+        const meetingUrl = String(body.meeting_url ?? '').trim()
+        if (!meetingUrl.startsWith('http')) return json({ ok: false, error: 'meeting_url (volledige link) is verplicht' }, 400)
+        let orgId = body.org_id
+        if (!orgId && caller.orgIds?.length === 1) orgId = caller.orgIds[0]
+        if (!orgId || !orgAllowed(orgId)) return json({ ok: false, error: 'geen toegang tot deze organisatie' }, 403)
+
+        const platform =
+          /meet\.google/.test(meetingUrl) ? 'google_meet' :
+          /zoom\./.test(meetingUrl) ? 'zoom' :
+          /teams\./.test(meetingUrl) ? 'teams' :
+          /webex\./.test(meetingUrl) ? 'webex' : 'other'
+
+        const res = await fetch(`${recallUrl}/api/v1/bot/`, {
+          method: 'POST',
+          headers: { Authorization: `Token ${recallKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            meeting_url: meetingUrl,
+            bot_name: 'salesUp Capture',
+            ...(body.join_at ? { join_at: body.join_at } : {}),
+            recording_config: {
+              transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+            },
+          }),
+        })
+        if (!res.ok) throw new Error(`Recall ${res.status}: ${(await res.text()).slice(0, 200)}`)
+        const bot = await res.json()
+
+        const { data: rec, error } = await sb.from('recordings').insert({
+          org_id:           orgId,
+          member_id:        caller.memberByOrg?.[orgId] ?? null,
+          recording_type:   'video_meeting',
+          meeting_platform: platform,
+          title:            body.title ?? null,
+          started_at:       body.join_at ?? new Date().toISOString(),
+          external_ref:     `bot:${bot.id}`,
+          consent_status:   'informed',
+        }).select('id').single()
+        if (error) throw new Error(error.message)
+
+        await sb.from('consents').insert({
+          recording_id: rec.id,
+          method:       'platform_banner',
+          details:      'Zichtbare bot "salesUp Capture" in de meeting — alle deelnemers zien de opname.',
+        })
+
+        console.log(`ingest: bot_start ${rec.id} (bot ${bot.id}, ${platform}, org ${orgId})`)
+        return json({ ok: true, recording_id: rec.id, bot_id: bot.id })
+      }
+
       case 'recall_transcript': {
         // Realtime-transcript uit de Recall SDK (in de app verzameld).
         // Alleen voor eigen-org-opnames die via recall_start zijn aangemaakt.

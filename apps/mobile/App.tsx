@@ -135,6 +135,8 @@ function Recorder({ session }: { session: Session }) {
   const [recType, setRecType] = useState<RecordingType>('in_person');
   const [title, setTitle] = useState('');
   const [consent, setConsent] = useState(false);
+  const [botUrl, setBotUrl] = useState('');
+  const [botBusy, setBotBusy] = useState(false);
 
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [seconds, setSeconds] = useState(0);
@@ -333,6 +335,36 @@ function Recorder({ session }: { session: Session }) {
               zakelijke belnummer (fase 4).
             </Text>
           )}
+
+          <Text style={styles.label}>Of stuur de zichtbare bot naar een meeting</Text>
+          <TextInput
+            style={styles.input} placeholder="Plak de meeting-link (Meet/Zoom/Teams)" placeholderTextColor="#8a93a6"
+            autoCapitalize="none" value={botUrl} onChangeText={setBotUrl}
+          />
+          <Pressable
+            style={[styles.button, { backgroundColor: 'rgba(255,255,255,0.12)', marginTop: 8 }, (botBusy || !botUrl.startsWith('http')) && styles.buttonDisabled]}
+            disabled={botBusy || !botUrl.startsWith('http')}
+            onPress={async () => {
+              setBotBusy(true);
+              try {
+                const { data } = await supabase.auth.getSession();
+                await ingest('bot_start', {
+                  meeting_url: botUrl.trim(),
+                  org_id: clientId || (ctx.orgs[0] && ctx.orgs[0].id),
+                  title: title || null,
+                }, data.session?.access_token ?? session.access_token);
+                setBotUrl('');
+                setPhase('done');
+                setMessage('Bot "salesUp Capture" is onderweg naar je meeting — verslag volgt automatisch per mail.');
+              } catch (e: any) {
+                setPhase('failed');
+                setMessage(`Bot sturen mislukt: ${e.message}`);
+              } finally {
+                setBotBusy(false);
+              }
+            }}>
+            <Text style={styles.buttonText}>{botBusy ? 'Bezig…' : '🤖 Stuur bot naar meeting'}</Text>
+          </Pressable>
 
           <Text style={styles.label}>Titel (optioneel)</Text>
           <TextInput

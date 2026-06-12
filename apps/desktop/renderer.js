@@ -182,6 +182,29 @@ $('loginBtn').addEventListener('click', async () => {
 });
 
 $('startBtn').addEventListener('click', () => startRecording().catch((e) => setMsg('mainMsg', e.message, 'err')));
+
+// ── Zichtbare meeting-bot (Leexi-model) — werkt zonder permissies/SDK ───────
+$('botBtn').addEventListener('click', async () => {
+  const url = $('botUrl').value.trim();
+  if (!url.startsWith('http')) {
+    setMsg('mainMsg', 'Plak eerst de volledige meeting-link.', 'err');
+    return;
+  }
+  $('botBtn').disabled = true;
+  try {
+    await ingest('bot_start', {
+      meeting_url: url,
+      org_id: $('client').value || (ctx.orgs[0] && ctx.orgs[0].id),
+      title: $('title').value || null,
+    });
+    $('botUrl').value = '';
+    setMsg('mainMsg', 'Bot "salesUp Capture" is onderweg naar je meeting — laat hem toe in de wachtruimte als daarom gevraagd wordt. Het verslag volgt automatisch per mail.', 'ok');
+  } catch (e) {
+    setMsg('mainMsg', `Bot sturen mislukt: ${e.message}`, 'err');
+  } finally {
+    $('botBtn').disabled = false;
+  }
+});
 $('stopBtn').addEventListener('click', () => {
   if (recallSt.active) {
     setMsg('recMsg', 'Opname stoppen en verwerken…', 'ok');
