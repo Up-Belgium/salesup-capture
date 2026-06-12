@@ -277,8 +277,20 @@ window.capture.onRecallPermission(({ permission, status }) => {
   setMsg('hint',
     `Permissies: ${parts.join(' · ')}${allOk
       ? ' — alles in orde, meetings worden automatisch gedetecteerd.'
-      : '. Zet de ontbrekende toe in Systeeminstellingen → Privacy & Beveiliging (verwijder eerst een eventueel oud "salesUp Capture"-item met de min-knop) en herstart daarna de app.'}`,
+      : '. Klik op de knop hieronder, sta toe wat macOS vraagt, en herstart daarna de app.'}`,
     allOk ? 'hint' : 'err');
+  $('permBtn').style.display = allOk ? 'none' : 'block';
+});
+
+$('permBtn').addEventListener('click', async () => {
+  // 'full-disk-access' is optioneel (alleen Teams-URL-detectie) — niet hervragen
+  const missing = Object.entries(permState)
+    .filter(([p, s]) => s !== 'granted' && p !== 'full-disk-access')
+    .map(([p]) => p);
+  for (const p of missing.length ? missing : ['accessibility', 'screen-capture', 'system-audio', 'microphone']) {
+    try { await window.capture.recallRequestPermission({ permission: p }); } catch (_) {}
+  }
+  setMsg('hint', 'Permissies aangevraagd — sta ze toe in de macOS-prompts/Systeeminstellingen en herstart daarna de app.', 'hint');
 });
 $('logout').addEventListener('click', (e) => {
   e.preventDefault();

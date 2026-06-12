@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('capture', {
   onRecallRecordingEnded: (cb) => ipcRenderer.on('recall-recording-ended', (_e, d) => cb(d)),
   onRecallError: (cb) => ipcRenderer.on('recall-error', (_e, d) => cb(d)),
   onRecallPermission: (cb) => ipcRenderer.on('recall-permission', (_e, d) => cb(d)),
+  recallRequestPermission: (args) => ipcRenderer.invoke('recall-request-permission', args),
 });

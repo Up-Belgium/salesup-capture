@@ -146,6 +146,10 @@ function initRecallSdk() {
 }
 
 ipcMain.handle('recall-available', () => !!RecallAiSdk);
+ipcMain.handle('recall-request-permission', async (_e, { permission }) => {
+  await RecallAiSdk.requestPermission(permission);
+  return true;
+});
 ipcMain.handle('recall-start', async (_e, { windowId, uploadToken }) => {
   recall.tokens[windowId] = uploadToken;
   await RecallAiSdk.startRecording({ windowId, uploadToken });
