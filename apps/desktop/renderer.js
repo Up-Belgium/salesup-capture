@@ -261,6 +261,19 @@ window.capture.onRecallRecordingEnded(async ({ windowId, segments }) => {
 });
 
 window.capture.onRecallError(({ message }) => setMsg('mainMsg', `Recall SDK: ${message}`, 'err'));
+
+const PERM_NL = {
+  'accessibility': 'Toegankelijkheid', 'screen-capture': 'Schermopname',
+  'microphone': 'Microfoon', 'system-audio': 'Systeemaudio', 'full-disk-access': 'Volledige schijftoegang',
+};
+window.capture.onRecallPermission(({ permission, status }) => {
+  const ok = String(status).toLowerCase() === 'granted';
+  if (!ok) {
+    setMsg('hint',
+      `Permissie "${PERM_NL[permission] || permission}" ontbreekt (${status}) — geef toegang via Systeeminstellingen → Privacy & Beveiliging, en herstart de app. Zonder deze permissie worden meetings niet gedetecteerd.`,
+      'err');
+  }
+});
 $('logout').addEventListener('click', (e) => {
   e.preventDefault();
   session = null;
@@ -299,6 +312,9 @@ $('autorec').addEventListener('change', () => {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async () => {
   try { hasRecallSdk = await window.capture.recallAvailable(); } catch (_) { hasRecallSdk = false; }
+  if (hasRecallSdk) {
+    setMsg('hint', 'Recall-modus actief: meetings (Zoom/Meet/Teams/Slack) worden automatisch gedetecteerd via systeemaudio.', 'hint');
+  }
   try {
     const stored = localStorage.getItem('capture.session');
     if (stored) {

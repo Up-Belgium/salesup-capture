@@ -82,7 +82,17 @@ function notifyMeeting(platform, onClick) {
 
 // ── Modus A: Recall.ai Desktop SDK ──────────────────────────────────────────
 function initRecallSdk() {
-  RecallAiSdk.init({ api_url: RECALL_SDK_API_URL });
+  RecallAiSdk.init({
+    api_url: RECALL_SDK_API_URL,
+    // Zonder deze permissies ziet de SDK geen meetings — macOS toont bij de
+    // eerste start de systeemprompts (schermopname/toegankelijkheid/audio).
+    acquirePermissionsOnStartup: ['accessibility', 'screen-capture', 'system-audio', 'microphone'],
+  });
+
+  RecallAiSdk.addEventListener('permission-status', (evt) => {
+    console.log('Recall permission:', evt.permission, evt.status);
+    win.webContents.send('recall-permission', { permission: evt.permission, status: evt.status });
+  });
 
   RecallAiSdk.addEventListener('meeting-detected', (evt) => {
     const windowId = evt.window?.id;
@@ -119,10 +129,7 @@ function initRecallSdk() {
   RecallAiSdk.addEventListener('recording-ended', async (evt) => {
     const windowId = evt.window?.id;
     if (!windowId) return;
-    // audio naar Recall-cloud (transcript hebben we al realtime binnen)
-    try {
-      await RecallAiSdk.uploadRecording({ windowId, uploadToken: recall.tokens[windowId] });
-    } catch (e) { console.error('uploadRecording:', e); }
+    // upload van de audio naar Recall gebeurt automatisch tijdens de opname
     win.webContents.send('recall-recording-ended', {
       windowId,
       segments: recall.segments[windowId] || [],
