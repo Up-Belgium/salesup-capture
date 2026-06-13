@@ -46,25 +46,24 @@ async function verifyState(state: string): Promise<string | null> {
   return (await hmac(memberId)) === sig ? memberId : null
 }
 
+// Supabase's functions-gateway forceert text/plain voor HTML (anti-phishing op
+// het gedeelde domein). We serveren daarom een propere UTF-8 platte-tekstpagina
+// — die rendert altijd correct en oogt verzorgd i.p.v. kapotte HTML.
 function page(opts: { ok: boolean; title: string; body: string }): Response {
-  const accent = opts.ok ? '#22c55e' : '#ff6b6b'
-  const icon = opts.ok
-    ? `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
-    : `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`
-  return new Response(
-    `<!doctype html><html lang="nl"><head><meta charset="utf-8">
-     <meta name="viewport" content="width=device-width,initial-scale=1"><title>salesUp Capture</title></head>
-     <body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:linear-gradient(160deg,#1a2540,#0f1626);color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">
-       <div style="text-align:center;max-width:440px;padding:32px 28px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-         <div style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-bottom:24px">sales<span style="color:#FF6B35">Up</span> Capture</div>
-         <div style="width:72px;height:72px;border-radius:50%;background:${accent};display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 8px 24px ${accent}55">${icon}</div>
-         <h1 style="font-size:21px;font-weight:700;margin:0 0 10px">${opts.title}</h1>
-         <p style="color:#aab2c5;line-height:1.55;font-size:15px;margin:0 0 24px">${opts.body}</p>
-         <button onclick="window.close()" style="background:#FF6B35;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Venster sluiten</button>
-       </div>
-     </body></html>`,
-    { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-  )
+  const mark = opts.ok ? '✓' : '✕'
+  const text =
+`salesUp Capture
+────────────────────
+
+${mark}  ${opts.title}
+
+${opts.body}
+
+Je kan dit venster nu sluiten.`
+  return new Response(text, {
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/plain; charset=utf-8' }),
+  })
 }
 function html(title: string, body: string): Response {
   // bestaande aanroepen: titel met "✓" = succes, anders fout

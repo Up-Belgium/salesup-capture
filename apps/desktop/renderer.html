@@ -4,81 +4,186 @@
   <meta charset="UTF-8" />
   <title>salesUp Capture</title>
   <style>
-    :root { --blue: #1a2540; --orange: #FF6B35; }
-    * { box-sizing: border-box; font-family: -apple-system, 'Segoe UI', sans-serif; }
-    body { margin: 0; background: var(--blue); color: #fff; padding: 28px; }
-    h1 { font-size: 22px; text-align: center; margin: 8px 0 4px; }
-    h1 span { color: var(--orange); }
-    .sub { color: #aab2c5; font-size: 12px; text-align: center; margin-bottom: 20px; }
-    label { display: block; color: #aab2c5; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin: 14px 0 6px; }
-    input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: none; background: rgba(255,255,255,.08); color: #fff; font-size: 14px; }
-    select option { color: #1a2540; }
-    button { width: 100%; margin-top: 18px; padding: 13px; border: none; border-radius: 10px; background: var(--orange); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
-    button:disabled { opacity: .45; cursor: default; }
-    button.stop { background: #d83a3a; }
-    .consent { display: flex; gap: 10px; align-items: flex-start; margin-top: 18px; font-size: 12.5px; color: #cfd5e1; line-height: 1.45; }
-    .consent input { width: auto; margin-top: 2px; }
-    #timer { font-size: 48px; font-weight: 200; text-align: center; margin: 18px 0 4px; font-variant-numeric: tabular-nums; display: none; }
-    .msg { margin-top: 14px; font-size: 12.5px; line-height: 1.45; text-align: center; }
-    .msg.err { color: #ff9d8f; } .msg.ok { color: #8fd9a8; } .msg.hint { color: #ffd9a8; }
-    .foot { margin-top: 22px; text-align: center; }
-    .foot a { color: #8a93a6; font-size: 12px; }
+    :root {
+      --blue: #131c30;
+      --blue-2: #0d1422;
+      --card: rgba(255,255,255,.045);
+      --card-brd: rgba(255,255,255,.09);
+      --orange: #FF6B35;
+      --orange-2: #ff8757;
+      --txt: #f3f6fb;
+      --muted: #94a0b8;
+      --green: #34d399;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+      color: var(--txt);
+      background:
+        radial-gradient(1100px 500px at 50% -10%, rgba(255,107,53,.16), transparent 60%),
+        linear-gradient(165deg, var(--blue), var(--blue-2));
+      -webkit-font-smoothing: antialiased;
+      padding: 26px 22px 30px;
+      min-height: 100%;
+    }
+    /* ── Header ── */
+    .brand { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 3px; }
+    .dot-logo { width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 14px var(--orange); }
+    .brand h1 { font-size: 21px; font-weight: 800; letter-spacing: -.4px; margin: 0; }
+    .brand h1 span { color: var(--orange); }
+    .tagline { color: var(--muted); font-size: 12px; text-align: center; margin: 0 0 22px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-brd);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(8px);
+    }
+    .card.hero { border-color: rgba(255,107,53,.32); background: linear-gradient(180deg, rgba(255,107,53,.10), rgba(255,107,53,.02)); }
+    .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .card-title { font-size: 14px; font-weight: 700; margin: 0; }
+    .card-desc { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 2px 0 14px; }
+    .pill { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--orange); background: rgba(255,107,53,.14); padding: 3px 8px; border-radius: 999px; }
+
+    label.fld { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px; }
+    input[type=text], input[type=email], input[type=password], input:not([type]), select {
+      width: 100%; padding: 11px 13px; border-radius: 11px;
+      border: 1px solid var(--card-brd); background: rgba(255,255,255,.05);
+      color: var(--txt); font-size: 14px; outline: none; transition: border-color .15s, background .15s;
+    }
+    input::placeholder { color: #6b7689; }
+    input:focus, select:focus { border-color: var(--orange); background: rgba(255,255,255,.08); }
+    select option { color: #131c30; }
+    .field { margin-bottom: 12px; }
+
+    button {
+      width: 100%; padding: 13px; border: none; border-radius: 12px;
+      background: linear-gradient(180deg, var(--orange-2), var(--orange));
+      color: #fff; font-size: 14.5px; font-weight: 700; cursor: pointer;
+      transition: transform .08s ease, opacity .15s, filter .15s;
+    }
+    button:hover { filter: brightness(1.06); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: .4; cursor: default; filter: none; }
+    button.ghost { background: rgba(255,255,255,.08); border: 1px solid var(--card-brd); }
+    button.light { background: #fff; color: #131c30; }
+    button.stop { background: linear-gradient(180deg, #ef5a5a, #d83a3a); }
+    button.sm { padding: 10px; font-size: 13px; }
+
+    .or { text-align: center; color: #5c6680; font-size: 11px; letter-spacing: .5px; margin: 16px 0 4px; text-transform: uppercase; }
+
+    /* ── Toggle switch (wraps the real checkbox, keeps its id) ── */
+    .toggle { display: flex; gap: 11px; align-items: flex-start; margin-top: 14px; font-size: 12.5px; color: #c7d0e0; line-height: 1.5; cursor: pointer; }
+    .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .track { flex: 0 0 auto; width: 38px; height: 22px; border-radius: 999px; background: rgba(255,255,255,.16); position: relative; transition: background .18s; margin-top: 1px; }
+    .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .18s; }
+    .toggle input:checked + .track { background: var(--orange); }
+    .toggle input:checked + .track::after { transform: translateX(16px); }
+
+    /* ── Messages ── */
+    .msg { margin-top: 14px; font-size: 12.5px; line-height: 1.5; text-align: center; }
+    .msg:empty { margin: 0; }
+    .msg.err { color: #ff9d8f; } .msg.ok { color: var(--green); } .msg.hint { color: #ffcf9e; }
+    .foot { margin-top: 20px; text-align: center; }
+    .foot a { color: #6b7689; font-size: 12px; text-decoration: none; }
+    .foot a:hover { color: var(--muted); }
+
+    /* ── Recording view ── */
+    #recView { text-align: center; padding-top: 26px; }
+    .rec-ring { width: 96px; height: 96px; border-radius: 50%; margin: 8px auto 18px; display: flex; align-items: center; justify-content: center;
+      background: rgba(239,90,90,.12); position: relative; }
+    .rec-ring::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(239,90,90,.5); animation: pulse 1.8s ease-out infinite; }
+    .rec-ring .core { width: 18px; height: 18px; border-radius: 50%; background: #ef5a5a; }
+    @keyframes pulse { 0% { transform: scale(.85); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
+    #timer { font-size: 46px; font-weight: 250; letter-spacing: 1px; font-variant-numeric: tabular-nums; display: none; }
+
     #recView, #mainView, #loginView { display: none; }
+    .login-card { margin-top: 8px; }
   </style>
 </head>
 <body>
-  <h1>sales<span>Up</span> Capture</h1>
-  <p class="sub">Botloze meeting-opname — draait op de achtergrond, nooit ín je meeting</p>
+  <div class="brand"><span class="dot-logo"></span><h1>sales<span>Up</span> Capture</h1></div>
+  <p class="tagline">Botloze meeting-opname — draait op de achtergrond, nooit ín je meeting</p>
 
+  <!-- ───────────── Login ───────────── -->
   <div id="loginView">
-    <label>E-mailadres</label>
-    <input id="email" type="email" autocomplete="username" />
-    <label>Wachtwoord</label>
-    <input id="password" type="password" autocomplete="current-password" />
-    <button id="loginBtn">Inloggen</button>
-    <p id="loginMsg" class="msg err"></p>
+    <div class="card login-card">
+      <div class="field">
+        <label class="fld">E-mailadres</label>
+        <input id="email" type="email" autocomplete="username" placeholder="jij@bedrijf.be" />
+      </div>
+      <div class="field">
+        <label class="fld">Wachtwoord</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </div>
+      <button id="loginBtn">Inloggen</button>
+      <p id="loginMsg" class="msg err"></p>
+    </div>
   </div>
 
+  <!-- ───────────── Hoofdscherm ───────────── -->
   <div id="mainView">
     <p id="hint" class="msg hint"></p>
-    <button id="permBtn" style="display:none;background:rgba(255,255,255,.12);font-size:13px;padding:9px;margin-top:6px">
-      Vraag ontbrekende permissies opnieuw aan
-    </button>
-    <div id="clientWrap">
-      <label>Klant</label>
+    <button id="permBtn" class="ghost sm" style="display:none;margin-bottom:14px">Vraag ontbrekende permissies opnieuw aan</button>
+
+    <div id="clientWrap" class="field">
+      <label class="fld">Klant</label>
       <select id="client"></select>
     </div>
-    <div id="calBox" style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px;margin-top:6px">
-      <div id="calStatus" style="font-size:13px;color:#cfd5e1;margin-bottom:8px">Agenda nog niet verbonden.</div>
-      <button id="calBtn" style="background:#fff;color:#1a2540;font-size:13px;font-weight:700;padding:10px">
-        📅 Verbind Google Agenda — neem al je meetings automatisch op
-      </button>
+
+    <!-- Hero: automatische agenda-koppeling -->
+    <div id="calBox" class="card hero">
+      <div class="card-head">
+        <span class="pill">Aanbevolen</span>
+        <h3 class="card-title">Automatisch opnemen</h3>
+      </div>
+      <p class="card-desc" id="calStatus">Verbind je agenda één keer — daarna verschijnt salesUp Capture vanzelf in al je videocall-meetings.</p>
+      <button id="calBtn" class="light">📅 Verbind Google Agenda</button>
     </div>
 
-    <label>Of stuur de zichtbare bot naar één meeting</label>
-    <input id="botUrl" placeholder="Plak de meeting-link (Meet/Zoom/Teams/Webex)" />
-    <button id="botBtn" style="background:rgba(255,255,255,.12);font-size:13px;padding:10px;margin-top:8px">
-      🤖 Stuur bot naar deze meeting
-    </button>
+    <div class="or">of eenmalig</div>
 
-    <label>Titel (optioneel)</label>
-    <input id="title" placeholder="bv. Demo-gesprek Acme NV" />
-    <div class="consent">
-      <input id="consent" type="checkbox" />
-      <span>De gesprekspartner(s) zijn geïnformeerd dat dit gesprek wordt opgenomen voor kwaliteits- en trainingsdoeleinden.</span>
+    <!-- Secundair: handmatige opname -->
+    <div class="card">
+      <h3 class="card-title" style="margin-bottom:12px">Eén meeting of opname</h3>
+
+      <div class="field">
+        <label class="fld">Stuur de bot naar een meeting-link</label>
+        <input id="botUrl" placeholder="Plak de Meet / Zoom / Teams / Webex-link" />
+      </div>
+      <button id="botBtn" class="ghost sm">🤖 Stuur bot naar deze meeting</button>
+
+      <div class="field" style="margin-top:16px">
+        <label class="fld">Titel (optioneel)</label>
+        <input id="title" placeholder="bv. Demo-gesprek Acme NV" />
+      </div>
+
+      <label class="toggle">
+        <input id="consent" type="checkbox" /><span class="track"></span>
+        <span>De gesprekspartner(s) zijn geïnformeerd dat dit gesprek wordt opgenomen voor kwaliteits- en trainingsdoeleinden.</span>
+      </label>
+      <label class="toggle">
+        <input id="autorec" type="checkbox" /><span class="track"></span>
+        <span><strong>Automatisch opnemen</strong> zodra een meeting gedetecteerd wordt (en stoppen zodra de meeting-app sluit). Ik bevestig als staande afspraak dat ik mijn gesprekspartners informeer.</span>
+      </label>
+
+      <button id="startBtn" style="margin-top:18px">● Start opname</button>
+      <p id="mainMsg" class="msg"></p>
     </div>
-    <div class="consent">
-      <input id="autorec" type="checkbox" />
-      <span><strong>Automatisch opnemen</strong> zodra een meeting gedetecteerd wordt (en stoppen zodra de meeting-app sluit). Met dit vinkje bevestig ik als staande afspraak dat ik mijn gesprekspartners over opname informeer.</span>
-    </div>
-    <button id="startBtn">● Start opname</button>
-    <p id="mainMsg" class="msg"></p>
+
     <div class="foot"><a href="#" id="logout">Uitloggen</a></div>
   </div>
 
+  <!-- ───────────── Opname bezig ───────────── -->
   <div id="recView">
+    <div class="rec-ring"><span class="core"></span></div>
     <div id="timer">00:00</div>
-    <p class="sub">Opname loopt — de app blijft in de menubalk actief.</p>
+    <p class="tagline" style="margin-top:10px">Opname loopt — de app blijft in de menubalk actief.</p>
     <button id="stopBtn" class="stop">Stop &amp; verstuur</button>
     <p id="recMsg" class="msg"></p>
   </div>
