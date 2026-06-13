@@ -1,10 +1,17 @@
 // ============================================================================
 // salesUp Capture — poll-bots
 // ============================================================================
-// Volgt lopende meeting-bots (external_ref 'bot:<id>') op bij Recall en haalt
-// na afloop het transcript op via media_shortcuts → register_transcript →
-// bestaande pipeline (samenvatting + mail + brug). Polling i.p.v. webhooks:
-// geen dashboard-configuratie nodig. Cron: elke 5 minuten.
+// Volgt meeting-bots op bij Recall en haalt na afloop het transcript op via
+// media_shortcuts → register_transcript → bestaande pipeline (samenvatting +
+// mail + brug). Polling i.p.v. webhooks. Cron: elke 5 minuten.
+//
+// external_ref-vormen:
+//   bot:<bot_id>        ad-hoc bot (action bot_start)
+//   calevent:<event_id> agenda-bot — de echte bot_id zit in het calendar-event
+//                       (event.bots[].bot_id), dus die zoeken we daar op.
+//
+// Transiënte fouten (bot nog niet aangemaakt, netwerk) blijven 'pending_upload'
+// en worden bij de volgende run opnieuw geprobeerd; pas na MAX_AGE_H → 'error'.
 //
 // Secrets: RECALL_API_KEY (+ RECALL_API_URL, default eu-central-1)
 // ============================================================================
@@ -68,22 +75,47 @@ Deno.serve(async (req) => {
   try { body = await req.json() } catch { /* batch */ }
   const limit = Math.min(Number(body?.limit) || 20, 50)
 
+  const headers = { Authorization: `Token ${recallKey}` }
+
+  // De echte bot_id ophalen: direct (bot:) of via het calendar-event (calevent:)
+  async function resolveBotId(externalRef: string): Promise<string | null> {
+    if (externalRef.startsWith('bot:')) return externalRef.slice(4)
+    if (externalRef.startsWith('calevent:')) {
+      const eventId = externalRef.slice(9)
+      const r = await fetch(`${recallUrl}/api/v2/calendar-events/${eventId}/`, { headers })
+      if (!r.ok) return null
+      const ev = await r.json()
+      const bots = Array.isArray(ev?.bots) ? ev.bots : []
+      const match = bots.find((b: any) => b?.deduplication_key === `salesup-${eventId}`) ?? bots[bots.length - 1]
+      return match?.bot_id ?? match?.id ?? null
+    }
+    return null
+  }
+
   let q = sb.from('recordings')
     .select('id, external_ref, started_at, created_at')
-    .like('external_ref', 'bot:%')
+    .or('external_ref.like.bot:%,external_ref.like.calevent:%')
     .eq('status', 'pending_upload')
     .order('created_at', { ascending: true })
     .limit(limit)
   if (body?.recording_id) q = q.eq('id', body.recording_id)
   const { data: todo } = await q
 
+  const tooOld = (rec: any) => Date.now() - new Date(rec.created_at).getTime() > MAX_AGE_H * 3600_000
+
   let done = 0, waiting = 0, failed = 0
   for (const rec of todo ?? []) {
     try {
-      const botId = String(rec.external_ref).slice(4)
-      const res = await fetch(`${recallUrl}/api/v1/bot/${botId}/`, {
-        headers: { Authorization: `Token ${recallKey}` },
-      })
+      const botId = await resolveBotId(String(rec.external_ref))
+      if (!botId) {
+        // bot nog niet geïnstantieerd door Recall — later opnieuw proberen
+        if (tooOld(rec)) {
+          await sb.from('recordings').update({ status: 'error', error: 'geen bot gevonden voor dit event binnen 24u' }).eq('id', rec.id)
+          failed++
+        } else { waiting++ }
+        continue
+      }
+      const res = await fetch(`${recallUrl}/api/v1/bot/${botId}/`, { headers })
       if (!res.ok) throw new Error(`Recall ${res.status}: ${(await res.text()).slice(0, 200)}`)
       const bot = await res.json()
 
@@ -117,7 +149,7 @@ Deno.serve(async (req) => {
           error: `bot mislukt: ${last?.code ?? 'onbekend'}${last?.sub_code ? ` (${last.sub_code})` : ''}`,
         }).eq('id', rec.id)
         failed++
-      } else if (Date.now() - new Date(rec.created_at).getTime() > MAX_AGE_H * 3600_000) {
+      } else if (tooOld(rec)) {
         await sb.from('recordings').update({
           status: 'error',
           error: `bot leverde binnen ${MAX_AGE_H}u geen transcript — opgegeven`,
@@ -127,10 +159,12 @@ Deno.serve(async (req) => {
         waiting++
       }
     } catch (e) {
-      failed++
+      // transiënt: niet definitief op 'error' zetten — volgende run probeert opnieuw,
+      // tenzij de opname al te oud is. Fout wel loggen in de error-kolom.
       await sb.from('recordings')
-        .update({ status: 'error', error: String(e).slice(0, 500) })
+        .update(tooOld(rec) ? { status: 'error', error: String(e).slice(0, 500) } : { error: String(e).slice(0, 500) })
         .eq('id', rec.id)
+      waiting++
     }
   }
 

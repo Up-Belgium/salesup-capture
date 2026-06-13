@@ -17,15 +17,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const WINDOW_BEFORE_MIN = 10
 const WINDOW_AHEAD_MIN = 20
 
-function botIdOf(resp: any): string | null {
-  return resp?.bot_id ?? resp?.id ?? resp?.bot?.id ?? resp?.bots?.[0]?.bot_id ?? resp?.bots?.[0]?.id ?? null
-}
-
 function platformOf(url: string): string {
   return /meet\.google/.test(url) ? 'google_meet'
        : /zoom\./.test(url) ? 'zoom'
        : /teams\./.test(url) ? 'teams'
        : /webex\./.test(url) ? 'webex' : 'other'
+}
+
+// Branded cover (1280x720 JPEG) die de bot in de meeting toont — uit de
+// publieke assets-bucket, éénmalig per run base64-gecodeerd.
+function toB64(bytes: Uint8Array): string {
+  let s = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) s += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  return btoa(s)
+}
+async function loadCover(): Promise<string | null> {
+  try {
+    const url = `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/assets/bot_cover.jpg`
+    const r = await fetch(url)
+    if (!r.ok) return null
+    return toB64(new Uint8Array(await r.arrayBuffer()))
+  } catch { return null }
 }
 
 Deno.serve(async (req) => {
@@ -48,27 +61,19 @@ Deno.serve(async (req) => {
   // videocall-link binnenkomen en onder welk veld de link zit.
   if (dbg) {
     const out: any[] = []
-    const gte = new Date(Date.now() - 60 * 60_000).toISOString()
+    const gte = new Date(Date.now() - 12 * 3600_000).toISOString()
     const lte = new Date(Date.now() + 24 * 3600_000).toISOString()
     for (const m of membersList ?? []) {
-      // kalender-object: status/sync-state (connected, connecting, disconnected, error)
-      const cr = await fetch(`${recallUrl}/api/v2/calendars/${m.recall_calendar_id}/`, { headers: recallHeaders })
-      const cj = await cr.json().catch(() => ({}))
       const r = await fetch(`${recallUrl}/api/v2/calendar-events/?calendar_id=${m.recall_calendar_id}&start_time__gte=${gte}&start_time__lte=${lte}`, { headers: recallHeaders })
       const j = await r.json().catch(() => ({}))
       const evs = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : [])
       out.push({
         member: m.full_name,
-        calendar_http: cr.status,
-        calendar_status: cj?.status ?? cj?.state ?? null,
-        calendar_error: cj?.status_changes?.slice?.(-1)?.[0] ?? cj?.error ?? null,
         http: r.status, event_count: evs.length,
-        sample_keys: evs[0] ? Object.keys(evs[0]) : [],
-        events: evs.slice(0, 10).map((e: any) => ({
+        events: evs.slice(0, 12).map((e: any) => ({
           start_time: e?.start_time,
           has_meeting_url: !!(e?.meeting_url ?? e?.meeting_platform_url),
-          meeting_url_field: e?.meeting_url != null ? 'meeting_url' : (e?.meeting_platform_url != null ? 'meeting_platform_url' : null),
-          is_deleted: e?.is_deleted ?? false,
+          bots: e?.bots ?? null,  // toont de echte structuur van geplande bots
         })),
       })
     }
@@ -78,6 +83,7 @@ Deno.serve(async (req) => {
   const now = Date.now()
   const gte = new Date(now - WINDOW_BEFORE_MIN * 60_000).toISOString()
   const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()
+  const coverB64 = await loadCover()
 
   let scheduled = 0, skipped = 0, errors = 0
   for (const m of membersList ?? []) {
@@ -106,6 +112,7 @@ Deno.serve(async (req) => {
             deduplication_key: `salesup-${ev.id}`,
             bot_config: {
               bot_name: 'salesUp Capture',
+              ...(coverB64 ? { automatic_video_output: { in_call_recording: { kind: 'jpeg', b64_data: coverB64 } } } : {}),
               recording_config: {
                 transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
               },
@@ -113,7 +120,10 @@ Deno.serve(async (req) => {
           }),
         })
         if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
-        const botId = botIdOf(await botRes.json())
+        await botRes.json().catch(() => ({}))
+        // De echte bot-id zit in event.bots[].bot_id (niet in deze response).
+        // poll-bots haalt hem op via het calendar-event — daarom slaan we de
+        // event-id op als external_ref.
 
         const { data: rec, error } = await sb.from('recordings').insert({
           org_id:             m.org_id,
@@ -122,7 +132,7 @@ Deno.serve(async (req) => {
           meeting_platform:   platformOf(meetingUrl),
           title:              ev?.raw?.summary ?? ev?.title ?? null,
           started_at:         ev?.start_time ?? new Date().toISOString(),
-          external_ref:       botId ? `bot:${botId}` : `calevent:${ev.id}`,
+          external_ref:       `calevent:${ev.id}`,
           calendar_event_uid: ev.id,
           consent_status:     'informed',
         }).select('id').single()
