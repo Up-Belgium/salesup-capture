@@ -48,7 +48,14 @@
       <label>Klant</label>
       <select id="client"></select>
     </div>
-    <label>Stuur de zichtbare bot naar een meeting (geen installatie nodig)</label>
+    <div id="calBox" style="background:rgba(255,255,255,.06);border-radius:10px;padding:12px;margin-top:6px">
+      <div id="calStatus" style="font-size:13px;color:#cfd5e1;margin-bottom:8px">Agenda nog niet verbonden.</div>
+      <button id="calBtn" style="background:#fff;color:#1a2540;font-size:13px;font-weight:700;padding:10px">
+        📅 Verbind Google Agenda — neem al je meetings automatisch op
+      </button>
+    </div>
+
+    <label>Of stuur de zichtbare bot naar één meeting</label>
     <input id="botUrl" placeholder="Plak de meeting-link (Meet/Zoom/Teams/Webex)" />
     <button id="botBtn" style="background:rgba(255,255,255,.12);font-size:13px;padding:10px;margin-top:8px">
       🤖 Stuur bot naar deze meeting

@@ -13,7 +13,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, Pressable,
   ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -335,6 +335,30 @@ function Recorder({ session }: { session: Session }) {
               zakelijke belnummer (fase 4).
             </Text>
           )}
+
+          <Pressable
+            style={[styles.button, { backgroundColor: '#fff', marginTop: 4 }]}
+            onPress={async () => {
+              try {
+                const { data } = await supabase.auth.getSession();
+                const token = data.session?.access_token ?? session.access_token;
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-oauth`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ action: 'auth_url' }),
+                });
+                const json = await res.json();
+                if (!res.ok || json.ok === false) throw new Error(json.error || `Fout (${res.status})`);
+                await Linking.openURL(json.url);
+              } catch (e: any) {
+                Alert.alert('Agenda verbinden', e.message);
+              }
+            }}>
+            <Text style={[styles.buttonText, { color: BRAND.blueDark }]}>📅 Verbind Google Agenda</Text>
+          </Pressable>
+          <Text style={styles.note}>
+            Eén keer toestaan in Google → al je videocall-meetings worden voortaan automatisch opgenomen.
+          </Text>
 
           <Text style={styles.label}>Of stuur de zichtbare bot naar een meeting</Text>
           <TextInput

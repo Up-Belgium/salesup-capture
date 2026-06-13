@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('capture', {
   onMeetingHint: (cb) => ipcRenderer.on('meeting-hint', (_e, d) => cb(d)),
   onMeetingEnded: (cb) => ipcRenderer.on('meeting-ended', (_e, d) => cb(d)),
   setRecordingState: (state) => ipcRenderer.send('recording-state', state),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Recall.ai Desktop SDK-modus (systeemaudio, alle platformen incl. Meet)
   recallAvailable: () => ipcRenderer.invoke('recall-available'),

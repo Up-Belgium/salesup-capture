@@ -1,121 +1,95 @@
 // ============================================================================
-// salesUp Capture — sync-calendars
+// salesUp Capture — sync-calendars (Recall Calendar V2)
 // ============================================================================
-// "Automatisch starten zodra de meeting start" voor de bot-route, zonder
-// OAuth: elk lid kan de geheime iCal-URL van zijn agenda instellen
-// (members.calendar_ics_url). Deze functie leest die feeds elke 5 minuten,
-// zoekt events die nu beginnen (venster -10/+20 min) met een
-// Meet/Zoom/Teams/Webex-link, en stuurt er automatisch de zichtbare bot op af.
-// Dedupe via recordings.calendar_event_uid.
+// "Automatisch starten zodra de meeting start" voor de bot-route, enterprise-
+// veilig: leden verbinden hun agenda via OAuth (zie calendar-oauth), Recall
+// beheert de tokens en synchroniseert de events. Deze functie haalt per
+// verbonden lid de events op die nu beginnen (venster -10/+20 min) met een
+// videocall-link en plant er via Recall automatisch de zichtbare bot voor in.
+// Transcript komt daarna binnen via poll-bots. Cron: elke 5 minuten.
 //
-// Beperkingen v1 (gelogd, geen fout): terugkerende events (RRULE) worden niet
-// uitgevouwen; tijden worden als UTC gelezen (Google's geheime iCal levert UTC).
-//
+// Dedupe: recordings.calendar_event_uid = Recall calendar-event-id.
 // Secrets: RECALL_API_KEY (+ RECALL_API_URL, default eu-central-1)
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const WINDOW_BEFORE_MIN = 10  // events die max 10 min geleden begonnen
-const WINDOW_AHEAD_MIN = 20   // of binnen 20 min beginnen
+const WINDOW_BEFORE_MIN = 10
+const WINDOW_AHEAD_MIN = 20
 
-const MEETING_URL_RE = /(https:\/\/(?:[\w.-]*\.)?(?:meet\.google\.com|zoom\.us|teams\.microsoft\.com|teams\.live\.com|webex\.com)\/[^\s">\\,]+)/i
+function botIdOf(resp: any): string | null {
+  return resp?.bot_id ?? resp?.id ?? resp?.bot?.id ?? resp?.bots?.[0]?.bot_id ?? resp?.bots?.[0]?.id ?? null
+}
 
-interface IcsEvent { uid: string; start: Date | null; summary: string; url: string | null; rrule: boolean }
-
-// Minimale ICS-parser: unfold + VEVENT-velden. Google's geheime iCal gebruikt
-// UTC-tijden (…Z); andere vormen worden best-effort als UTC gelezen.
-function parseIcs(text: string): IcsEvent[] {
-  const unfolded = text.replace(/\r?\n[ \t]/g, '')
-  const lines = unfolded.split(/\r?\n/)
-  const events: IcsEvent[] = []
-  let cur: any = null
-  for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') { cur = { uid: '', start: null, summary: '', blob: '', rrule: false }; continue }
-    if (line === 'END:VEVENT') {
-      if (cur) {
-        const m = String(cur.blob).match(MEETING_URL_RE)
-        events.push({
-          uid: cur.uid, start: cur.start, summary: cur.summary,
-          url: m ? m[1].replace(/\\/g, '') : null, rrule: cur.rrule,
-        })
-      }
-      cur = null; continue
-    }
-    if (!cur) continue
-    cur.blob += line + '\n'
-    if (line.startsWith('UID:')) cur.uid = line.slice(4).trim()
-    else if (line.startsWith('SUMMARY:')) cur.summary = line.slice(8).trim()
-    else if (line.startsWith('RRULE:')) cur.rrule = true
-    else if (line.startsWith('DTSTART')) {
-      const v = line.split(':').pop()?.trim() ?? ''
-      const m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/)
-      if (m) cur.start = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]))
-    }
-  }
-  return events
+function platformOf(url: string): string {
+  return /meet\.google/.test(url) ? 'google_meet'
+       : /zoom\./.test(url) ? 'zoom'
+       : /teams\./.test(url) ? 'teams'
+       : /webex\./.test(url) ? 'webex' : 'other'
 }
 
 Deno.serve(async (req) => {
   const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
   if (!recallKey) return json({ ok: false, error: 'RECALL_API_KEY niet gezet als Edge Function secret' }, 500)
   const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://eu-central-1.recall.ai').trim()
+  const recallHeaders = { Authorization: `Token ${recallKey}`, 'Content-Type': 'application/json' }
 
-  const sb = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  )
+  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
   const { data: membersList } = await sb.from('members')
-    .select('id, org_id, full_name, calendar_ics_url')
-    .not('calendar_ics_url', 'is', null)
+    .select('id, org_id, full_name, recall_calendar_id')
+    .not('recall_calendar_id', 'is', null)
     .eq('is_active', true)
 
   const now = Date.now()
+  const gte = new Date(now - WINDOW_BEFORE_MIN * 60_000).toISOString()
+  const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()
+
   let scheduled = 0, skipped = 0, errors = 0
   for (const m of membersList ?? []) {
     try {
-      const res = await fetch(m.calendar_ics_url, { signal: AbortSignal.timeout(10_000) })
-      if (!res.ok) throw new Error(`iCal ${res.status}`)
-      const events = parseIcs(await res.text())
+      const evRes = await fetch(
+        `${recallUrl}/api/v2/calendar-events/?calendar_id=${m.recall_calendar_id}&start_time__gte=${gte}&start_time__lte=${lte}`,
+        { headers: recallHeaders },
+      )
+      if (!evRes.ok) throw new Error(`list-events ${evRes.status}: ${(await evRes.text()).slice(0, 150)}`)
+      const evJson = await evRes.json()
+      const events = Array.isArray(evJson?.results) ? evJson.results : (Array.isArray(evJson) ? evJson : [])
 
       for (const ev of events) {
-        if (!ev.url || !ev.start || !ev.uid) continue
-        if (ev.rrule) continue // v1: terugkerende reeksen niet uitvouwen
-        const delta = ev.start.getTime() - now
-        if (delta < -WINDOW_BEFORE_MIN * 60_000 || delta > WINDOW_AHEAD_MIN * 60_000) continue
+        if (ev?.is_deleted) continue
+        const meetingUrl: string | null = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
+        if (!meetingUrl || !meetingUrl.startsWith('http')) continue
 
-        const eventKey = `${ev.uid}@${ev.start.toISOString()}`
         const { data: existing } = await sb.from('recordings')
-          .select('id').eq('member_id', m.id).eq('calendar_event_uid', eventKey).maybeSingle()
+          .select('id').eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
         if (existing) { skipped++; continue }
 
-        const botRes = await fetch(`${recallUrl}/api/v1/bot/`, {
+        const botRes = await fetch(`${recallUrl}/api/v2/calendar-events/${ev.id}/bot/`, {
           method: 'POST',
-          headers: { Authorization: `Token ${recallKey}`, 'Content-Type': 'application/json' },
+          headers: recallHeaders,
           body: JSON.stringify({
-            meeting_url: ev.url,
-            bot_name: 'salesUp Capture',
-            ...(delta > 2 * 60_000 ? { join_at: ev.start.toISOString() } : {}),
-            recording_config: {
-              transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+            deduplication_key: `salesup-${ev.id}`,
+            bot_config: {
+              bot_name: 'salesUp Capture',
+              recording_config: {
+                transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+              },
             },
           }),
         })
-        if (!botRes.ok) throw new Error(`Recall ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
-        const bot = await botRes.json()
+        if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
+        const botId = botIdOf(await botRes.json())
 
         const { data: rec, error } = await sb.from('recordings').insert({
           org_id:             m.org_id,
           member_id:          m.id,
           recording_type:     'video_meeting',
-          meeting_platform:   /meet\.google/.test(ev.url) ? 'google_meet'
-                            : /zoom\./.test(ev.url) ? 'zoom'
-                            : /teams\./.test(ev.url) ? 'teams' : 'webex',
-          title:              ev.summary || null,
-          started_at:         ev.start.toISOString(),
-          external_ref:       `bot:${bot.id}`,
-          calendar_event_uid: eventKey,
+          meeting_platform:   platformOf(meetingUrl),
+          title:              ev?.raw?.summary ?? ev?.title ?? null,
+          started_at:         ev?.start_time ?? new Date().toISOString(),
+          external_ref:       botId ? `bot:${botId}` : `calevent:${ev.id}`,
+          calendar_event_uid: ev.id,
           consent_status:     'informed',
         }).select('id').single()
         if (error) throw new Error(error.message)
@@ -123,10 +97,10 @@ Deno.serve(async (req) => {
         await sb.from('consents').insert({
           recording_id: rec.id,
           method:       'platform_banner',
-          details:      'Automatisch via agenda-koppeling; zichtbare bot "salesUp Capture" in de meeting.',
+          details:      'Automatisch via verbonden agenda; zichtbare bot "salesUp Capture" in de meeting.',
         })
         scheduled++
-        console.log(`sync-calendars: bot gepland voor "${ev.summary}" (${m.full_name})`)
+        console.log(`sync-calendars: bot gepland voor event ${ev.id} (${m.full_name})`)
       }
     } catch (e) {
       errors++

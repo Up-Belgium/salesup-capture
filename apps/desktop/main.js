@@ -10,7 +10,7 @@
 //
 // De app draait in de menubalk/tray en joint nooit de meeting.
 
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, ipcMain, shell } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 
@@ -145,6 +145,7 @@ function initRecallSdk() {
   });
 }
 
+ipcMain.handle('open-external', (_e, url) => { shell.openExternal(url); return true; });
 ipcMain.handle('recall-available', () => !!RecallAiSdk);
 ipcMain.handle('recall-request-permission', async (_e, { permission }) => {
   await RecallAiSdk.requestPermission(permission);

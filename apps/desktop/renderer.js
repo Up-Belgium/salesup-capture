@@ -80,6 +80,7 @@ async function enterMain() {
   }
   $('clientWrap').style.display = ctx.orgs.length > 1 ? 'block' : 'none';
   show('mainView');
+  refreshCalStatus();
 }
 
 // ── Opname ───────────────────────────────────────────────────────────────────
@@ -182,6 +183,49 @@ $('loginBtn').addEventListener('click', async () => {
 });
 
 $('startBtn').addEventListener('click', () => startRecording().catch((e) => setMsg('mainMsg', e.message, 'err')));
+
+// ── Agenda verbinden (Google OAuth via calendar-oauth) ──────────────────────
+async function refreshCalStatus() {
+  try {
+    const s = await calOAuth('status');
+    if (s.connected) {
+      $('calStatus').textContent = `Agenda verbonden${s.calendar_email ? ` (${s.calendar_email})` : ''} ✓ — meetings worden automatisch opgenomen.`;
+      $('calBtn').textContent = '📅 Agenda ontkoppelen';
+      $('calBtn').dataset.connected = '1';
+    } else {
+      $('calStatus').textContent = 'Agenda nog niet verbonden.';
+      $('calBtn').textContent = '📅 Verbind Google Agenda — neem al je meetings automatisch op';
+      $('calBtn').dataset.connected = '';
+    }
+  } catch (_) {}
+}
+// calendar-oauth heeft een eigen endpoint; we hergebruiken ingest() niet (andere functie)
+async function calOAuth(action) {
+  const token = await freshToken();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-oauth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action }),
+  });
+  const json = await res.json();
+  if (!res.ok || json.ok === false) throw new Error(json.error || `Fout (${res.status})`);
+  return json;
+}
+$('calBtn').addEventListener('click', async () => {
+  try {
+    if ($('calBtn').dataset.connected) {
+      await calOAuth('disconnect');
+      setMsg('mainMsg', 'Agenda ontkoppeld.', 'hint');
+    } else {
+      const { url } = await calOAuth('auth_url');
+      await window.capture.openExternal(url);
+      setMsg('mainMsg', 'Het Google-toestemmingsscherm is geopend in je browser. Na "Toestaan" is je agenda verbonden — klik daarna hieronder op Vernieuwen.', 'hint');
+    }
+    setTimeout(refreshCalStatus, 1500);
+  } catch (e) {
+    setMsg('mainMsg', e.message, 'err');
+  }
+});
 
 // ── Zichtbare meeting-bot (Leexi-model) — werkt zonder permissies/SDK ───────
 $('botBtn').addEventListener('click', async () => {

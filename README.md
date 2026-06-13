@@ -6,9 +6,15 @@ met een brug naar het trainingsplatform voor de kwaliteitsanalyse.
 
 ## Wat het doet
 
-1. **Opnemen** via vier kanalen: mobiele app (iOS/Android), desktop-app (botloze
-   meeting-opname met automatische detectie), hardware-device (Plaud-model) en
-   integraties (Recall.ai-webhook).
+1. **Opnemen** via meerdere kanalen:
+   - **Videocalls (aanbevolen): agenda-koppeling** — gebruiker verbindt zijn Google
+     Agenda met één klik (OAuth, `calendar-oauth` → Recall Calendar V2). Daarna
+     verschijnt de zichtbare bot "salesUp Capture" automatisch in elke geplande
+     meeting (`sync-calendars`, cron */5). Geen installatie, geen geheime URL,
+     intrekbaar; klant-IT-admin kan de app domain-wide goedkeuren.
+   - **Videocall ad-hoc**: meeting-link plakken → bot sturen (`bot_start`).
+   - Desktop-app (botloze SDK-opname), mobiele app (fysiek/telefoon-op-speaker),
+     hardware-device (Plaud-model), integratie-webhook.
 2. **Transcriberen** binnen ±10 minuten (Deepgram, NL + sprekerherkenning).
 3. **Per mail na elke meeting**: samenvatting + actielijst (Claude) + volledig
    transcript, naar de eigenaar van de opname (Resend).
