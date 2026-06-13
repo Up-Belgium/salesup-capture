@@ -41,6 +41,40 @@ Deno.serve(async (req) => {
     .not('recall_calendar_id', 'is', null)
     .eq('is_active', true)
 
+  let dbg: any = null
+  try { dbg = (await req.clone().json())?.debug ? true : null } catch { /* */ }
+
+  // Diagnose-modus: privacyveilig (geen titels/inhoud) — toont of events met
+  // videocall-link binnenkomen en onder welk veld de link zit.
+  if (dbg) {
+    const out: any[] = []
+    const gte = new Date(Date.now() - 60 * 60_000).toISOString()
+    const lte = new Date(Date.now() + 24 * 3600_000).toISOString()
+    for (const m of membersList ?? []) {
+      // kalender-object: status/sync-state (connected, connecting, disconnected, error)
+      const cr = await fetch(`${recallUrl}/api/v2/calendars/${m.recall_calendar_id}/`, { headers: recallHeaders })
+      const cj = await cr.json().catch(() => ({}))
+      const r = await fetch(`${recallUrl}/api/v2/calendar-events/?calendar_id=${m.recall_calendar_id}&start_time__gte=${gte}&start_time__lte=${lte}`, { headers: recallHeaders })
+      const j = await r.json().catch(() => ({}))
+      const evs = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : [])
+      out.push({
+        member: m.full_name,
+        calendar_http: cr.status,
+        calendar_status: cj?.status ?? cj?.state ?? null,
+        calendar_error: cj?.status_changes?.slice?.(-1)?.[0] ?? cj?.error ?? null,
+        http: r.status, event_count: evs.length,
+        sample_keys: evs[0] ? Object.keys(evs[0]) : [],
+        events: evs.slice(0, 10).map((e: any) => ({
+          start_time: e?.start_time,
+          has_meeting_url: !!(e?.meeting_url ?? e?.meeting_platform_url),
+          meeting_url_field: e?.meeting_url != null ? 'meeting_url' : (e?.meeting_platform_url != null ? 'meeting_platform_url' : null),
+          is_deleted: e?.is_deleted ?? false,
+        })),
+      })
+    }
+    return json({ ok: true, debug: out })
+  }
+
   const now = Date.now()
   const gte = new Date(now - WINDOW_BEFORE_MIN * 60_000).toISOString()
   const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()

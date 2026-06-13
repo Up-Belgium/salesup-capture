@@ -46,16 +46,29 @@ async function verifyState(state: string): Promise<string | null> {
   return (await hmac(memberId)) === sig ? memberId : null
 }
 
-function html(title: string, body: string): Response {
+function page(opts: { ok: boolean; title: string; body: string }): Response {
+  const accent = opts.ok ? '#22c55e' : '#ff6b6b'
+  const icon = opts.ok
+    ? `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+    : `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`
   return new Response(
-    `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-     <body style="font-family:-apple-system,Segoe UI,sans-serif;background:#1a2540;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">
-     <div style="text-align:center;max-width:420px;padding:24px">
-       <div style="font-size:22px;font-weight:700;margin-bottom:12px">sales<span style="color:#FF6B35">Up</span> Capture</div>
-       <h2 style="font-weight:600">${title}</h2><p style="color:#aab2c5;line-height:1.5">${body}</p>
-     </div>`,
+    `<!doctype html><html lang="nl"><head><meta charset="utf-8">
+     <meta name="viewport" content="width=device-width,initial-scale=1"><title>salesUp Capture</title></head>
+     <body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:linear-gradient(160deg,#1a2540,#0f1626);color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">
+       <div style="text-align:center;max-width:440px;padding:32px 28px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+         <div style="font-size:24px;font-weight:800;letter-spacing:-.5px;margin-bottom:24px">sales<span style="color:#FF6B35">Up</span> Capture</div>
+         <div style="width:72px;height:72px;border-radius:50%;background:${accent};display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 8px 24px ${accent}55">${icon}</div>
+         <h1 style="font-size:21px;font-weight:700;margin:0 0 10px">${opts.title}</h1>
+         <p style="color:#aab2c5;line-height:1.55;font-size:15px;margin:0 0 24px">${opts.body}</p>
+         <button onclick="window.close()" style="background:#FF6B35;color:#fff;border:none;border-radius:10px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Venster sluiten</button>
+       </div>
+     </body></html>`,
     { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
   )
+}
+function html(title: string, body: string): Response {
+  // bestaande aanroepen: titel met "✓" = succes, anders fout
+  return page({ ok: /✓|verbonden/i.test(title), title: title.replace(/\s*✓\s*/, ''), body })
 }
 
 Deno.serve(async (req) => {
@@ -111,7 +124,11 @@ Deno.serve(async (req) => {
       }).eq('id', memberId)
 
       console.log(`calendar-oauth: verbonden member ${memberId} → calendar ${calJson.id}`)
-      return html('Agenda verbonden ✓', 'salesUp Capture neemt je videocall-meetings nu automatisch op. Je kan dit venster sluiten.')
+      return page({
+        ok: true,
+        title: 'Je agenda is verbonden!',
+        body: 'Vanaf nu neemt salesUp Capture je videocall-meetings automatisch op — je hoeft niets meer te doen. Na elke meeting krijg je een samenvatting met actiepunten in je mailbox.',
+      })
     } catch (e) {
       console.error(`calendar-oauth callback: ${e}`)
       return html('Koppeling mislukt', String(e).slice(0, 300))
