@@ -17,6 +17,28 @@ overweeg white-label hardware (er bestaan ODM-fabrikanten van AI-voicerecorders)
 plaats van zelf certificeren — het platform hier werkt met elk device dat WAV-bestanden
 naar onze ingest kan sturen.
 
+## Behuizing + bevestiging op de telefoon (magneet of plakker)
+
+Twee sporen, afhankelijk van fase:
+
+- **Prototype (nu):** print de behuizing uit `case/salesup_capture_case.scad`. Die
+  heeft (a) een microfoon-gaatje, (b) een opening voor USB-C/knop, en (c) een ronde
+  uitsparing aan de achterkant voor een **MagSafe-magneetring (Ø56 mm)**. Lijm zo'n
+  goedkope zelfklevende magneetring in de uitsparing → het kastje klikt op de
+  achterkant van een iPhone (of op een magneet-sticker op een Android). Geen
+  magneetring nodig? Het achtervlak is plat genoeg voor een **3M-plakstrip**.
+  Meet je samengestelde board+batterij op en pas de variabelen bovenaan het
+  `.scad`-bestand aan vóór het printen.
+- **Verkoopbaar product:** ga niet zelf een kastje 3D-printen op schaal. Kies een
+  **white-label AI-voicerecorder** (ODM) die al CE/FCC-gecertificeerd is én met een
+  magnetische clip/MagSafe-puck wordt geleverd, en laat die onder salesUp-merk
+  bedrukken. Wij hoeven alleen de firmware/upload op ons ingest-endpoint te richten.
+  Dat is sneller, goedkoper en juridisch veiliger dan eigen hardware certificeren.
+
+> Tip: een MagSafe-bevestiging werkt out-of-the-box op iPhone 12+. Op Android (of
+> oudere iPhones) plak je eenmalig een dunne metalen/magneet-sticker op het toestel
+> of de hoes; daarna klikt het device er magnetisch op.
+
 ## Stuklijst prototype (±€20)
 
 - **Seeed Studio XIAO ESP32S3 Sense** (~€14) — ESP32-S3 met ingebouwde PDM-microfoon
