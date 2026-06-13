@@ -20,7 +20,8 @@ Deno.serve(async (req) => {
   const trainingUrl = (Deno.env.get('TRAINING_URL') ?? '').trim()
   const trainingKey = (Deno.env.get('TRAINING_SERVICE_ROLE_KEY') ?? '').trim()
   if (!trainingUrl || !trainingKey) {
-    return json({ ok: false, error: 'TRAINING_URL en/of TRAINING_SERVICE_ROLE_KEY niet gezet als Edge Function secret' }, 500)
+    // Brug is optioneel: zonder secrets netjes overslaan (geen 500-spam in de cron).
+    return json({ ok: true, skipped: 'training-bridge niet geconfigureerd (TRAINING_URL/TRAINING_SERVICE_ROLE_KEY ontbreken)' }, 200)
   }
 
   const sb = createClient(
