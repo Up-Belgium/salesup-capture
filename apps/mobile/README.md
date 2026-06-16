@@ -21,6 +21,24 @@ Daarna is alles automatisch: de nachtelijke `transcribe-recordings` (02:45) en
 `evaluate-calls` (03:00) maken er een geanalyseerd gesprek van, zichtbaar in het
 dashboard onder **Opnames** en **Call Quality**.
 
+## Snelstart — één gebaar → meteen opnemen
+
+De app heeft een groot één-tik opnameveld op het hoofdscherm. Voor een écht "geheime
+knop"-gevoel zónder de app te openen, koppel je de diepe link in iOS:
+
+1. Zet in de app **Snelstart** + **"Ik informeer mijn gesprekspartners"** aan.
+2. iOS → **Opdrachten**-app → nieuwe opdracht **"Open URL"** → `salesupcapture://record`.
+3. Koppel die opdracht aan één van:
+   - **Tik op achterkant** (Instellingen → Toegankelijkheid → Aanraken → Tik op
+     achterkant → Dubbele/Driedubbele tik → jouw opdracht) — dubbeltik op de
+     achterkant van de telefoon en de opname start.
+   - **Action Button** (iPhone 15 Pro+) → Opdracht.
+   - **Siri**: "Hey Siri, start opname".
+   - **Bedieningspaneel / Vergrendelscherm** (iOS 18-bediening).
+
+De zijknop/slaaptoets zelf kan geen enkele iOS-app overnemen — dit is de native,
+App-Store-conforme manier om hetzelfde resultaat te krijgen.
+
 ## Lokaal draaien
 
 ```bash
