@@ -49,16 +49,38 @@ npx expo start         # QR-code scannen met Expo Go (let op: background-audio
                        # werkt pas volledig in een development/production build)
 ```
 
-## Builds voor de stores (EAS)
+## Builds voor de stores (EAS) — Apple Developer-account is opgezet ✓
 
-Vereist: Apple Developer-account (€99/j) en Google Play Console (eenmalig $25).
+`eas.json` met drie profielen staat klaar (development/preview/production) en
+`expo-doctor` is groen (18/18). Eenmalig (op jouw Mac, met jouw Apple/Expo-login):
 
 ```bash
+cd apps/mobile
+npm install
 npm install -g eas-cli
-eas login
-eas build:configure
-eas build --platform ios       # TestFlight
-eas build --platform android   # AAB voor Play Console (of --profile preview voor APK)
+eas login                       # je Expo-account
+eas build:configure             # koppelt het project (schrijft projectId)
+```
+
+**Op je eigen iPhone testen (snelst):**
+```bash
+eas device:create               # registreer je toestel (scan QR / volg de link)
+eas build --platform ios --profile preview
+```
+→ EAS bouwt in de cloud (Apple-credentials worden interactief beheerd) en geeft een
+installeerbare link/QR voor je toestel. Hierin werkt de achtergrond-audio én de
+snelstart-deeplink (anders dan in Expo Go).
+
+**Naar TestFlight / App Store:**
+```bash
+eas build --platform ios --profile production
+eas submit --platform ios
+```
+
+Android (later, na Google Play Console $25):
+```bash
+eas build --platform android --profile preview     # APK om te zijladen
+eas build --platform android --profile production   # AAB voor Play Console
 ```
 
 ## Bewuste beperkingen (zie Structuurvoorstel_Capture_Platform_v1.md §2.3)

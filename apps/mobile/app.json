@@ -11,6 +11,7 @@
     },
     "ios": {
       "bundleIdentifier": "be.salesup.capture",
+      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden.",
