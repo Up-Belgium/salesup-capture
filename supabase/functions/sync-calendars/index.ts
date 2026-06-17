@@ -90,6 +90,7 @@ Deno.serve(async (req) => {
   const coverB64 = await loadCover()
 
   let scheduled = 0, skipped = 0, errors = 0
+  let lastErrorCode: string | null = null  // generieke hint (bv. 402 credit) zonder details te lekken
   for (const m of membersList ?? []) {
     try {
       const evRes = await fetch(
@@ -101,54 +102,62 @@ Deno.serve(async (req) => {
       const events = Array.isArray(evJson?.results) ? evJson.results : (Array.isArray(evJson) ? evJson : [])
 
       for (const ev of events) {
-        if (ev?.is_deleted) continue
-        const meetingUrl: string | null = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
-        if (!meetingUrl || !meetingUrl.startsWith('http')) continue
+        // Per-event afgeschermd: één mislukt event mag de rest niet blokkeren.
+        try {
+          if (ev?.is_deleted) continue
+          const meetingUrl: string | null = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
+          if (!meetingUrl || !meetingUrl.startsWith('http')) continue
+          // Al afgelopen meetings overslaan — daar kan geen bot meer voor joinen.
+          const endMs = ev?.end_time ? new Date(ev.end_time).getTime() : null
+          if (endMs && endMs < now) continue
 
-        const { data: existing } = await sb.from('recordings')
-          .select('id').eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
-        if (existing) { skipped++; continue }
+          const { data: existing } = await sb.from('recordings')
+            .select('id').eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
+          if (existing) { skipped++; continue }
 
-        const botRes = await fetch(`${recallUrl}/api/v2/calendar-events/${ev.id}/bot/`, {
-          method: 'POST',
-          headers: recallHeaders,
-          body: JSON.stringify({
-            deduplication_key: `salesup-${ev.id}`,
-            bot_config: {
-              bot_name: 'salesUp Capture',
-              ...(coverB64 ? { automatic_video_output: { in_call_recording: { kind: 'jpeg', b64_data: coverB64 } } } : {}),
-              recording_config: {
-                transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+          const botRes = await fetch(`${recallUrl}/api/v2/calendar-events/${ev.id}/bot/`, {
+            method: 'POST',
+            headers: recallHeaders,
+            body: JSON.stringify({
+              deduplication_key: `salesup-${ev.id}`,
+              bot_config: {
+                bot_name: 'salesUp Capture',
+                ...(coverB64 ? { automatic_video_output: { in_call_recording: { kind: 'jpeg', b64_data: coverB64 } } } : {}),
+                recording_config: {
+                  transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+                },
               },
-            },
-          }),
-        })
-        if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
-        await botRes.json().catch(() => ({}))
-        // De echte bot-id zit in event.bots[].bot_id (niet in deze response).
-        // poll-bots haalt hem op via het calendar-event — daarom slaan we de
-        // event-id op als external_ref.
+            }),
+          })
+          if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
+          await botRes.json().catch(() => ({}))
 
-        const { data: rec, error } = await sb.from('recordings').insert({
-          org_id:             m.org_id,
-          member_id:          m.id,
-          recording_type:     'video_meeting',
-          meeting_platform:   platformOf(meetingUrl),
-          title:              ev?.raw?.summary ?? ev?.title ?? null,
-          started_at:         ev?.start_time ?? new Date().toISOString(),
-          external_ref:       `calevent:${ev.id}`,
-          calendar_event_uid: ev.id,
-          consent_status:     'informed',
-        }).select('id').single()
-        if (error) throw new Error(error.message)
+          const { data: rec, error } = await sb.from('recordings').insert({
+            org_id:             m.org_id,
+            member_id:          m.id,
+            recording_type:     'video_meeting',
+            meeting_platform:   platformOf(meetingUrl),
+            title:              ev?.raw?.summary ?? ev?.title ?? null,
+            started_at:         ev?.start_time ?? new Date().toISOString(),
+            external_ref:       `calevent:${ev.id}`,
+            calendar_event_uid: ev.id,
+            consent_status:     'informed',
+          }).select('id').single()
+          if (error) throw new Error(error.message)
 
-        await sb.from('consents').insert({
-          recording_id: rec.id,
-          method:       'platform_banner',
-          details:      'Automatisch via verbonden agenda; zichtbare bot "salesUp Capture" in de meeting.',
-        })
-        scheduled++
-        console.log(`sync-calendars: bot gepland voor event ${ev.id} (${m.full_name})`)
+          await sb.from('consents').insert({
+            recording_id: rec.id,
+            method:       'platform_banner',
+            details:      'Automatisch via verbonden agenda; zichtbare bot "salesUp Capture" in de meeting.',
+          })
+          scheduled++
+          console.log(`sync-calendars: bot gepland voor event ${ev.id} (${m.full_name})`)
+        } catch (evErr) {
+          errors++
+          const msg = String(evErr)
+          if (/402|insufficient_credit/i.test(msg)) lastErrorCode = 'recall_insufficient_credit'
+          console.error(`sync-calendars: event ${ev?.id} (${m.full_name}): ${evErr}`)
+        }
       }
     } catch (e) {
       errors++
@@ -157,7 +166,7 @@ Deno.serve(async (req) => {
   }
 
   console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} fouten=${errors}`)
-  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, errors })
+  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, errors, hint: lastErrorCode })
 })
 
 function json(obj: unknown, status = 200): Response {
