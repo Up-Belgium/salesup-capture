@@ -14,8 +14,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const WINDOW_BEFORE_MIN = 10
-const WINDOW_AHEAD_MIN = 20
+// Ruim plannen i.p.v. een krap venster: Recall laat de bot vanzelf op de
+// starttijd binnenkomen. Zo missen we geen meetings waarvan de link laat synct
+// of waarvan een cron-tik het krappe venster net miste. Dedup via
+// recordings.calendar_event_uid voorkomt dubbele bots.
+const WINDOW_BEFORE_MIN = 120        // ook lopende meetings (tot 2u geleden gestart)
+const WINDOW_AHEAD_MIN = 24 * 60     // alle meetings tot 24u vooruit
 
 function platformOf(url: string): string {
   return /meet\.google/.test(url) ? 'google_meet'
