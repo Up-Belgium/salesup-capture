@@ -28,6 +28,29 @@ function platformOf(url: string): string {
        : /webex\./.test(url) ? 'webex' : 'other'
 }
 
+// Externe meeting? = minstens één deelnemer buiten het eigen e-maildomein.
+// Interne meetings (alle deelnemers binnen het eigen domein) slaan we over om
+// kosten te sparen. Werkt voor Google (attendees[].email) en Microsoft
+// (attendees[].emailAddress.address). Geen/onbekende deelnemers → wél opnemen
+// (kan een externe call zijn zonder attendee-lijst; we willen die niet missen).
+function attendeeEmails(ev: any): string[] {
+  const raw = ev?.raw ?? {}
+  const list = Array.isArray(raw.attendees) ? raw.attendees : []
+  const out: string[] = []
+  for (const a of list) {
+    if (a?.resource) continue // vergaderzaal/resource overslaan
+    const email = (a?.email ?? a?.emailAddress?.address ?? '').toString().toLowerCase().trim()
+    if (email && email.includes('@') && !email.endsWith('resource.calendar.google.com')) out.push(email)
+  }
+  return out
+}
+function isExternalMeeting(ev: any, ownDomain: string | null): boolean {
+  const emails = attendeeEmails(ev).filter((e) => e.split('@')[1] !== undefined)
+  const others = ownDomain ? emails.filter((e) => e.split('@')[1] !== ownDomain) : emails
+  if (emails.length === 0) return true            // geen attendee-info → niet riskeren, opnemen
+  return others.length > 0                         // ≥1 deelnemer buiten eigen domein
+}
+
 // Branded cover (1280x720 JPEG) die de bot in de meeting toont — uit de
 // publieke assets-bucket, éénmalig per run base64-gecodeerd.
 function toB64(bytes: Uint8Array): string {
@@ -54,7 +77,7 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
   const { data: membersList } = await sb.from('members')
-    .select('id, org_id, full_name, recall_calendar_id')
+    .select('id, org_id, full_name, email, calendar_email, recall_calendar_id')
     .not('recall_calendar_id', 'is', null)
     .eq('is_active', true)
 
@@ -89,10 +112,11 @@ Deno.serve(async (req) => {
   const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()
   const coverB64 = await loadCover()
 
-  let scheduled = 0, skipped = 0, errors = 0
+  let scheduled = 0, skipped = 0, errors = 0, internal = 0
   let lastErrorCode: string | null = null  // generieke hint (bv. 402 credit) zonder details te lekken
   for (const m of membersList ?? []) {
     try {
+      const ownDomain = String(m.calendar_email ?? m.email ?? '').toLowerCase().split('@')[1] ?? null
       const evRes = await fetch(
         `${recallUrl}/api/v2/calendar-events/?calendar_id=${m.recall_calendar_id}&start_time__gte=${gte}&start_time__lte=${lte}`,
         { headers: recallHeaders },
@@ -110,6 +134,8 @@ Deno.serve(async (req) => {
           // Al afgelopen meetings overslaan — daar kan geen bot meer voor joinen.
           const endMs = ev?.end_time ? new Date(ev.end_time).getTime() : null
           if (endMs && endMs < now) continue
+          // Interne meetings (alle deelnemers binnen eigen domein) overslaan.
+          if (!isExternalMeeting(ev, ownDomain)) { internal++; continue }
 
           const { data: existing } = await sb.from('recordings')
             .select('id').eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
@@ -165,8 +191,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} fouten=${errors}`)
-  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, errors, hint: lastErrorCode })
+  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} intern-overgeslagen=${internal} fouten=${errors}`)
+  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, internal, errors, hint: lastErrorCode })
 })
 
 function json(obj: unknown, status = 200): Response {
