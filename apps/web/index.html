@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>salesUp Capture</title>
+<style>
+  :root { --bg:#eef1f6; --surface:#fff; --ink:#1a2540; --muted:#6b7488; --line:#e4e8f0; --orange:#FF6B35; --green:#15936b; --red:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  a { color:var(--orange); }
+  .wrap { max-width:780px; margin:0 auto; padding:28px 18px 60px; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .brand { font-size:22px; font-weight:800; letter-spacing:-.4px; }
+  .brand span { color:var(--orange); }
+  .tag { color:var(--muted); font-size:13px; margin:0 0 22px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px 20px; margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(26,37,64,.04),0 10px 30px rgba(26,37,64,.05); }
+  input { width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:12px; font-size:15px; margin-bottom:10px; background:#fbfcfe; }
+  button { background:var(--orange); color:#fff; border:none; border-radius:12px; padding:13px 18px; font-weight:700; font-size:15px; cursor:pointer; }
+  button.sec { background:#fff; color:var(--ink); border:1px solid var(--line); font-weight:600; font-size:13px; padding:9px 14px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
+  .b-ok { background:#e7f6ef; color:var(--green); } .b-wait { background:#eaf0fb; color:#2d63c8; } .b-err { background:#fbeaea; color:var(--red); }
+  .meta { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .mtitle { font-weight:700; font-size:15px; }
+  h4 { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:16px 0 6px; }
+  .summary { font-size:14px; line-height:1.55; color:#33405c; white-space:pre-wrap; }
+  ul.acts { margin:6px 0 0; padding-left:18px; font-size:13.5px; line-height:1.7; color:#33405c; }
+  details { margin-top:10px; } summary { cursor:pointer; color:var(--orange); font-size:13px; font-weight:600; }
+  pre.tr { white-space:pre-wrap; font-size:12.5px; color:#44506a; background:#f7f8fb; border-radius:10px; padding:12px; max-height:320px; overflow:auto; margin-top:8px; }
+  .toggles { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
+  .tg { display:flex; align-items:center; gap:8px; font-size:13px; background:#f7f8fb; border:1px solid var(--line); border-radius:10px; padding:8px 12px; cursor:pointer; user-select:none; }
+  .tg input { width:auto; margin:0; }
+  .switchbar { display:flex; gap:8px; margin:18px 0 8px; }
+  .switchbar button { background:#fff; color:var(--muted); border:1px solid var(--line); font-weight:600; font-size:13px; flex:1; }
+  .switchbar button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .empty { text-align:center; color:var(--muted); padding:40px 0; }
+  .dl { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  #loginView, #appView { display:none; }
+  .err { color:var(--red); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">sales<span>Up</span> Capture</div>
+    <button id="logoutBtn" class="sec" style="display:none">Uitloggen</button>
+  </header>
+  <p class="tag">Je meetings, transcripties en actiepunten — op één plek.</p>
+
+  <!-- Login -->
+  <div id="loginView">
+    <div class="card">
+      <input id="email" type="email" placeholder="E-mailadres" autocomplete="username" />
+      <input id="password" type="password" placeholder="Wachtwoord" autocomplete="current-password" />
+      <button id="loginBtn" style="width:100%">Inloggen</button>
+      <p id="loginErr" class="err"></p>
+    </div>
+    <div class="card dl">
+      <div><div class="mtitle">Desktop-app</div><div class="muted">Neem je videocalls automatisch op.</div></div>
+      <a href="https://github.com/stigvh-rgb/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download (Mac)</button></a>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="appView">
+    <div class="switchbar">
+      <button id="tabMeetings" class="on">Mijn meetings</button>
+      <button id="tabDownload">Desktop-app</button>
+    </div>
+    <div id="meetingsPane">
+      <div id="meetingsList"><p class="empty">Laden…</p></div>
+    </div>
+    <div id="downloadPane" style="display:none">
+      <div class="card dl">
+        <div><div class="mtitle">salesUp Capture voor Mac</div><div class="muted">Apple Silicon · v0.1.0 · eerste keer: rechterklik → Open</div></div>
+        <a href="https://github.com/stigvh-rgb/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download</button></a>
+      </div>
+      <p class="muted">Inloggen in de app gebeurt met ditzelfde account. Windows volgt.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://plbuczbxtauhuobkicdr.supabase.co';
+const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYnVjemJ4dGF1aHVvYmtpY2RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjA1NTcsImV4cCI6MjA5NjczNjU1N30.5hIzTuUvHYYxfnGxjM0IZmOxLwB0pDlo9_HCTsVcO-I';
+const sb = supabase.createClient(SUPABASE_URL, ANON);
+const $ = (id) => document.getElementById(id);
+
+const STATUS = {
+  pending_upload:['In wachtrij','b-wait'], uploaded:['In verwerking','b-wait'],
+  transcribing:['Transcriberen…','b-wait'], transcribed:['Klaar','b-ok'],
+  error:['Fout','b-err'], purged:['Gewist','b-wait'],
+};
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtDate(iso){ try { return new Date(iso).toLocaleString('nl-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); } catch { return iso; } }
+function fmtDur(s){ return s? Math.round(s/60)+' min' : ''; }
+function one(x){ return Array.isArray(x) ? x[0] : x; }
+
+async function show(view){
+  $('loginView').style.display = view==='login'?'block':'none';
+  $('appView').style.display = view==='app'?'block':'none';
+  $('logoutBtn').style.display = view==='app'?'inline-block':'none';
+}
+
+async function loadMeetings(){
+  const { data, error } = await sb.from('recordings')
+    .select('id,title,meeting_platform,recording_type,started_at,duration_seconds,status,marked_internal,share_to_training,bridged_at, transcripts(full_text,segments,word_count), summaries(summary,action_items,email_sent_at)')
+    .order('started_at',{ascending:false});
+  const list = $('meetingsList');
+  if (error){ list.innerHTML = '<p class="empty">Kon meetings niet laden: '+esc(error.message)+'</p>'; return; }
+  if (!data || data.length===0){ list.innerHTML = '<p class="empty">Nog geen meetings. Zodra een opname verwerkt is, verschijnt ze hier.</p>'; return; }
+  list.innerHTML = data.map(renderCard).join('');
+}
+
+function renderCard(r){
+  const t = one(r.transcripts) || {}; const s = one(r.summaries) || {};
+  const [lbl,cls] = STATUS[r.status] || [r.status,'b-wait'];
+  const acts = Array.isArray(s.action_items) ? s.action_items : [];
+  const platform = ({google_meet:'Google Meet',zoom:'Zoom',teams:'Teams',webex:'Webex'})[r.meeting_platform] || (r.recording_type==='in_person'?'Fysiek':r.recording_type==='phone'?'Telefoon':'Meeting');
+  return `<div class="card" data-id="${r.id}">
+    <div class="row">
+      <div><div class="mtitle">${esc(r.title||'Naamloze meeting')}</div>
+        <div class="meta">${platform} · ${fmtDate(r.started_at)}${r.duration_seconds?(' · '+fmtDur(r.duration_seconds)):''}</div></div>
+      <span class="badge ${cls}">${lbl}</span>
+    </div>
+    ${s.summary?`<h4>Samenvatting</h4><div class="summary">${esc(s.summary)}</div>`:''}
+    ${acts.length?`<h4>Actiepunten</h4><ul class="acts">${acts.map(a=>`<li>${esc(a.actie||a.action||'')}${a.eigenaar?(' — '+esc(a.eigenaar)):''}${a.deadline?(' <em>('+esc(a.deadline)+')</em>'):''}</li>`).join('')}</ul>`:''}
+    ${t.full_text?`<details><summary>Volledig transcript${t.word_count?(' ('+t.word_count+' woorden)'):''}</summary><pre class="tr">${esc(t.full_text)}</pre></details>`:''}
+    <div class="toggles">
+      <label class="tg"><input type="checkbox" data-f="marked_internal" ${r.marked_internal?'checked':''}/> Interne meeting</label>
+      <label class="tg"><input type="checkbox" data-f="share_to_training" ${r.share_to_training?'checked':''}/> Naar trainingsplatform${r.bridged_at?' ✓':''}</label>
+    </div>
+  </div>`;
+}
+
+async function setPref(recId, field, value){
+  const { data:{ session } } = await sb.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/recording-prefs`, {
+    method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session.access_token}`},
+    body: JSON.stringify({ recording_id: recId, [field]: value }),
+  });
+  const j = await res.json();
+  if (!res.ok || j.ok===false) { alert('Kon niet opslaan: '+(j.error||res.status)); return false; }
+  return true;
+}
+
+document.addEventListener('change', async (e)=>{
+  const inp = e.target;
+  if (inp.matches('input[data-f]')){
+    const card = inp.closest('.card'); const id = card.getAttribute('data-id'); const field = inp.getAttribute('data-f');
+    inp.disabled = true;
+    const ok = await setPref(id, field, inp.checked);
+    inp.disabled = false;
+    if (!ok) inp.checked = !inp.checked;
+    // interne meeting aanvinken → doorsturen automatisch uit
+    if (ok && field==='marked_internal' && inp.checked){
+      const share = card.querySelector('input[data-f="share_to_training"]'); if (share) share.checked = false;
+    }
+  }
+});
+
+$('loginBtn').addEventListener('click', async ()=>{
+  $('loginErr').textContent='';
+  const { error } = await sb.auth.signInWithPassword({ email:$('email').value.trim(), password:$('password').value });
+  if (error) $('loginErr').textContent = 'Inloggen mislukt — controleer e-mail en wachtwoord.';
+});
+$('logoutBtn').addEventListener('click', ()=> sb.auth.signOut());
+$('tabMeetings').addEventListener('click', ()=>{ $('tabMeetings').classList.add('on'); $('tabDownload').classList.remove('on'); $('meetingsPane').style.display='block'; $('downloadPane').style.display='none'; });
+$('tabDownload').addEventListener('click', ()=>{ $('tabDownload').classList.add('on'); $('tabMeetings').classList.remove('on'); $('downloadPane').style.display='block'; $('meetingsPane').style.display='none'; });
+
+sb.auth.onAuthStateChange((_e, session)=>{ if (session){ show('app'); loadMeetings(); } else { show('login'); } });
+sb.auth.getSession().then(({data})=>{ if (data.session){ show('app'); loadMeetings(); } else { show('login'); } });
+</script>
+</body>
+</html>
