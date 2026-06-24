@@ -2,6 +2,7 @@
   "name": "salesup-capture-desktop",
   "version": "0.1.0",
   "private": true,
+  "author": "salesUp Agency <platform@salesup.be>",
   "description": "salesUp Capture — desktop-app: botloze meeting-opname (Plaud-principe), met automatische meetingdetectie",
   "main": "main.js",
   "scripts": {
@@ -18,7 +19,20 @@
     "mac": {
       "category": "public.app-category.business",
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
-      "artifactName": "salesUp-Capture-${version}-${arch}.dmg"
+      "artifactName": "salesUp-Capture-${version}-${arch}.dmg",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "salesUp Capture neemt — na jouw start — meetings op voor kwaliteits- en trainingsdoeleinden.",
+        "NSCameraUsageDescription": "salesUp Capture kan beeld opnemen tijdens videocalls.",
+        "NSScreenCaptureUsageDescription": "salesUp Capture neemt je videocalls op."
+      }
+    },
+    "win": {
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {
