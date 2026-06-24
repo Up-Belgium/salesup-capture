@@ -16,7 +16,9 @@
     "appId": "be.salesup.capture.desktop",
     "productName": "salesUp Capture",
     "mac": {
-      "category": "public.app-category.business"
+      "category": "public.app-category.business",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "artifactName": "salesUp-Capture-${version}-${arch}.dmg"
     }
   },
   "dependencies": {
