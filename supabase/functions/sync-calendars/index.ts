@@ -192,8 +192,47 @@ Deno.serve(async (req) => {
   }
 
   console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} intern-overgeslagen=${internal} fouten=${errors}`)
+
+  // Krediet-alarm: bij Recall 402 (insufficient_credit) vielen meetings vroeger
+  // STILLETJES weg (de cron leest niemand). We mailen nu de owner(s) zodat dit
+  // nooit meer ongemerkt gebeurt. Throttle in alertOwners() voorkomt spam.
+  if (lastErrorCode === 'recall_insufficient_credit') {
+    try { await alertOwners(sb) } catch (e) { console.error(`sync-calendars: krediet-alarm faalde: ${e}`) }
+  }
+
   return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, internal, errors, hint: lastErrorCode })
 })
+
+// Mailt actieve owners dat het Recall-krediet op is. Graceful skip zonder
+// RESEND_API_KEY. Throttle: enkel in de eerste 5 min van het uur, zodat de
+// 5-minuten-cron hooguit ~1 mail per uur stuurt tijdens een outage.
+async function alertOwners(sb: any): Promise<void> {
+  const resendKey = (Deno.env.get('RESEND_API_KEY') ?? '').trim()
+  if (!resendKey) return
+  if (new Date().getMinutes() >= 5) return
+  const from = (Deno.env.get('CAPTURE_EMAIL_FROM') ?? 'salesUp Capture <capture@salesup.be>').trim()
+  const { data: owners } = await sb.from('members')
+    .select('email').eq('role', 'owner').eq('is_active', true)
+  const to = [...new Set((owners ?? []).map((o: any) => (o.email ?? '').trim()).filter(Boolean))]
+  if (to.length === 0) return
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from, to,
+      subject: '⚠️ salesUp Capture: Recall-krediet op — meetings worden niet opgenomen',
+      text: [
+        'Let op: bij het inplannen van opname-bots gaf Recall "insufficient_credit" (402).',
+        'Zolang dit aanhoudt worden ingeplande meetings NIET opgenomen.',
+        '',
+        'Actie: vul het krediet aan in je Recall-account. Het systeem hervat dan',
+        'automatisch bij de volgende synchronisatie (elke 5 minuten).',
+        '',
+        '— salesUp Capture',
+      ].join('\n'),
+    }),
+  })
+}
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
