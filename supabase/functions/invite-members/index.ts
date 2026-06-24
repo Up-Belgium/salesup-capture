@@ -52,12 +52,33 @@ Deno.serve(async (req) => {
 
   const orgId = body.org_id
   const role = ROLES.includes(body.role) ? body.role : 'member'
-  const emails: string[] = Array.isArray(body.emails)
-    ? [...new Set(body.emails.map((e: any) => String(e).trim().toLowerCase()).filter((e: string) => /\S+@\S+\.\S+/.test(e)))]
-    : []
+  // no_email=true: geen wachtwoord-mail sturen. Gebruikt door het trainingsplatform,
+  // waar het wachtwoord via de training-login naar Capture wordt gespiegeld
+  // (één wachtwoord). De member + auth-user worden wél aangemaakt.
+  const skipEmail = body.no_email === true
+
+  // Ondersteunt twee vormen (backwards-compatible):
+  //   { emails: ["a@x.be", ...] }
+  //   { members: [{ email, full_name?, training_participant_id? }, ...] }
+  const rawList: any[] = Array.isArray(body.members)
+    ? body.members
+    : Array.isArray(body.emails)
+      ? body.emails.map((e: any) => ({ email: e }))
+      : []
+  const byEmail = new Map<string, { email: string; full_name: string | null; training_participant_id: string | null }>()
+  for (const r of rawList) {
+    const email = String(r?.email ?? '').trim().toLowerCase()
+    if (!/\S+@\S+\.\S+/.test(email)) continue
+    byEmail.set(email, {
+      email,
+      full_name: r?.full_name ? String(r.full_name).trim() : null,
+      training_participant_id: r?.training_participant_id ?? null,
+    })
+  }
+  const entries = [...byEmail.values()]
   if (!orgId) return json({ ok: false, error: 'org_id verplicht' }, 400)
-  if (emails.length === 0) return json({ ok: false, error: 'geen geldige e-mailadressen' }, 400)
-  if (emails.length > 500) return json({ ok: false, error: 'maximaal 500 per oproep' }, 400)
+  if (entries.length === 0) return json({ ok: false, error: 'geen geldige e-mailadressen' }, 400)
+  if (entries.length > 500) return json({ ok: false, error: 'maximaal 500 per oproep' }, 400)
 
   // ── Autorisatie ───────────────────────────────────────────────────────────
   const adminSecret = (Deno.env.get('CAPTURE_ADMIN_SECRET') ?? '').trim()
@@ -82,7 +103,8 @@ Deno.serve(async (req) => {
   let invited = 0, reactivated = 0, failed = 0
   const errors: Record<string, string> = {}
 
-  for (const email of emails) {
+  for (const entry of entries) {
+    const email = entry.email
     try {
       // 1 · user aanmaken (of bestaande ophalen)
       let userId: string | null = null
@@ -96,23 +118,32 @@ Deno.serve(async (req) => {
         if (!userId) throw new Error(created.error?.message || 'kon gebruiker niet aanmaken/vinden')
       }
 
-      // 2 · member-rij (idempotent)
+      // 2 · member-rij (idempotent). full_name/training_participant_id worden
+      //     gezet bij aanmaak en bij-gevuld als ze nog ontbreken (re-invite).
       const { data: existingMember } = await sb.from('members')
-        .select('id, is_active').eq('org_id', orgId).eq('user_id', userId).maybeSingle()
+        .select('id, is_active, full_name, training_participant_id')
+        .eq('org_id', orgId).eq('user_id', userId).maybeSingle()
       if (existingMember) {
-        if (!existingMember.is_active) {
-          await sb.from('members').update({ is_active: true }).eq('id', existingMember.id)
-          reactivated++
+        const patch: Record<string, unknown> = {}
+        if (!existingMember.is_active) { patch.is_active = true; reactivated++ }
+        if (entry.full_name && !existingMember.full_name) patch.full_name = entry.full_name
+        if (entry.training_participant_id && !existingMember.training_participant_id) {
+          patch.training_participant_id = entry.training_participant_id
         }
+        if (Object.keys(patch).length) await sb.from('members').update(patch).eq('id', existingMember.id)
       } else {
-        await sb.from('members').insert({ org_id: orgId, user_id: userId, email, role })
+        await sb.from('members').insert({
+          org_id: orgId, user_id: userId, email, role,
+          full_name: entry.full_name,
+          training_participant_id: entry.training_participant_id,
+        })
         invited++
       }
 
-      // 3 · branded "stel je wachtwoord in"-link mailen
-      const link = await sb.auth.admin.generateLink({ type: 'recovery', email })
-      const actionLink = link.data?.properties?.action_link
-      if (resendKey && actionLink) {
+      // 3 · branded "stel je wachtwoord in"-link mailen (tenzij no_email)
+      const link = skipEmail ? null : await sb.auth.admin.generateLink({ type: 'recovery', email })
+      const actionLink = link?.data?.properties?.action_link
+      if (!skipEmail && resendKey && actionLink) {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
@@ -130,7 +161,7 @@ Deno.serve(async (req) => {
   }
 
   console.log(`invite-members: org=${orgId} invited=${invited} reactivated=${reactivated} failed=${failed}`)
-  return json({ ok: true, invited, reactivated, failed, total: emails.length, errors })
+  return json({ ok: true, invited, reactivated, failed, total: entries.length, errors })
 })
 
 function json(obj: unknown, status = 200): Response {
