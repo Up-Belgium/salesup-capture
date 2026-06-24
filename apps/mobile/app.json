@@ -21,7 +21,8 @@
         "NSMicrophoneUsageDescription": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden.",
         "UIBackgroundModes": [
           "audio"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
