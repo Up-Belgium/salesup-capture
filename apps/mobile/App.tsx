@@ -66,12 +66,18 @@ export default function App() {
   );
 }
 
-// ── Login ────────────────────────────────────────────────────────────────────
+// ── Login (+ wachtwoord-reset via e-mailcode) ─────────────────────────────────
+type LoginMode = 'login' | 'reset_request' | 'reset_verify';
+
 function Login() {
+  const [mode, setMode] = useState<LoginMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   async function submit() {
     setBusy(true); setError('');
@@ -80,20 +86,83 @@ function Login() {
     setBusy(false);
   }
 
+  // Stap 1: verstuur een 6-cijferige code naar de mailbox.
+  async function requestCode() {
+    if (!email.trim()) { setError('Vul eerst je e-mailadres in.'); return; }
+    setBusy(true); setError(''); setInfo('');
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim());
+    if (err) setError('Kon geen code versturen — controleer je e-mailadres.');
+    else { setMode('reset_verify'); setInfo('We stuurden een 6-cijferige code naar je mailbox.'); }
+    setBusy(false);
+  }
+
+  // Stap 2: verifieer de code en zet meteen het nieuwe wachtwoord.
+  async function verifyAndSet() {
+    if (code.trim().length < 6 || newPassword.length < 8) {
+      setError('Vul de 6-cijferige code in en een wachtwoord van minstens 8 tekens.'); return;
+    }
+    setBusy(true); setError(''); setInfo('');
+    const { error: vErr } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
+    if (vErr) { setError('Code ongeldig of verlopen — vraag een nieuwe aan.'); setBusy(false); return; }
+    const { error: uErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (uErr) { setError('Kon wachtwoord niet instellen — probeer opnieuw.'); setBusy(false); return; }
+    // Sessie is nu actief → onAuthStateChange opent de app automatisch.
+  }
+
+  function backToLogin() {
+    setMode('login'); setError(''); setInfo(''); setCode(''); setNewPassword('');
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.center}>
       <Wordmark />
-      <Text style={styles.subtitle}>Log in met je salesUp-account</Text>
+      <Text style={styles.subtitle}>
+        {mode === 'login' ? 'Log in met je salesUp-account'
+          : mode === 'reset_request' ? 'Wachtwoord opnieuw instellen'
+          : 'Voer de code in en kies een nieuw wachtwoord'}
+      </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.card}>
-        <TextInput style={styles.input} placeholder="E-mailadres" placeholderTextColor="#aab0bf"
-          autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-        <TextInput style={styles.input} placeholder="Wachtwoord" placeholderTextColor="#aab0bf"
-          secureTextEntry value={password} onChangeText={setPassword} />
-        <Pressable style={[styles.primary, busy && styles.disabled]} onPress={submit} disabled={busy}>
-          <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Inloggen'}</Text>
-        </Pressable>
-      </View>
+      {info ? <Text style={styles.success}>{info}</Text> : null}
+
+      {mode === 'login' && (
+        <View style={styles.card}>
+          <TextInput style={styles.input} placeholder="E-mailadres" placeholderTextColor="#aab0bf"
+            autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+          <TextInput style={styles.input} placeholder="Wachtwoord" placeholderTextColor="#aab0bf"
+            secureTextEntry value={password} onChangeText={setPassword} />
+          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={submit} disabled={busy}>
+            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Inloggen'}</Text>
+          </Pressable>
+          <Pressable style={styles.linkBtn} onPress={() => { setMode('reset_request'); setError(''); }}>
+            <Text style={styles.link}>Wachtwoord vergeten?</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {mode === 'reset_request' && (
+        <View style={styles.card}>
+          <TextInput style={styles.input} placeholder="E-mailadres" placeholderTextColor="#aab0bf"
+            autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={requestCode} disabled={busy}>
+            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Stuur code'}</Text>
+          </Pressable>
+          <Pressable style={styles.linkBtn} onPress={backToLogin}><Text style={styles.link}>Terug naar inloggen</Text></Pressable>
+        </View>
+      )}
+
+      {mode === 'reset_verify' && (
+        <View style={styles.card}>
+          <TextInput style={styles.input} placeholder="6-cijferige code" placeholderTextColor="#aab0bf"
+            keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} />
+          <TextInput style={styles.input} placeholder="Nieuw wachtwoord (min. 8 tekens)" placeholderTextColor="#aab0bf"
+            secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={verifyAndSet} disabled={busy}>
+            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Wachtwoord instellen'}</Text>
+          </Pressable>
+          <Pressable style={styles.linkBtn} onPress={requestCode} disabled={busy}><Text style={styles.link}>Geen code ontvangen? Stuur opnieuw</Text></Pressable>
+          <Pressable style={styles.linkBtn} onPress={backToLogin}><Text style={styles.link}>Terug naar inloggen</Text></Pressable>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
