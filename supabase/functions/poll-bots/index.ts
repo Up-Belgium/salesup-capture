@@ -101,7 +101,11 @@ Deno.serve(async (req) => {
   if (body?.recording_id) q = q.eq('id', body.recording_id)
   const { data: todo } = await q
 
-  const tooOld = (rec: any) => Date.now() - new Date(rec.created_at).getTime() > MAX_AGE_H * 3600_000
+  // "Te oud" meten vanaf de MEETING (started_at), niet vanaf het inplannen:
+  // bots worden tot 24u vooraf gepland, dus created_at kan al >24u oud zijn op
+  // het moment dat de meeting net is afgelopen. Fallback op created_at.
+  const refMs = (rec: any) => new Date(rec.started_at ?? rec.created_at).getTime()
+  const tooOld = (rec: any) => Date.now() - refMs(rec) > MAX_AGE_H * 3600_000
 
   let done = 0, waiting = 0, failed = 0
   for (const rec of todo ?? []) {
