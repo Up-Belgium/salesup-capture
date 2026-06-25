@@ -14,7 +14,7 @@ import {
   ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
 import * as FileSystem from 'expo-file-system';
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -115,8 +115,8 @@ function Recorder({ session }: { session: Session }) {
   const [botUrl, setBotUrl] = useState('');
   const [botBusy, setBotBusy] = useState(false);
 
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordingActive = useRef(false);
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed'>('idle');
   const [message, setMessage] = useState('');
@@ -156,21 +156,20 @@ function Recorder({ session }: { session: Session }) {
   }, [session.access_token]);
 
   const start = useCallback(async (opts?: { fromDeepLink?: boolean }) => {
-    if (recordingRef.current) return; // al bezig
+    if (recordingActive.current) return; // al bezig
     if (!consentRef.current) {
       Alert.alert('Eerst consent', 'Zet "Ik informeer mijn gesprekspartners" aan om (snel) te kunnen opnemen.');
       return;
     }
     const org = clientIdRef.current;
     if (!org) { Alert.alert('Kies een klant', 'Selecteer onder "Meer opties" voor welke klant je opneemt.'); return; }
-    const perm = await Audio.requestPermissionsAsync();
+    const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microfoon vereist', 'Geef toegang tot de microfoon om op te nemen.'); return; }
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true, playsInSilentModeIOS: true, staysActiveInBackground: true, shouldDuckAndroid: true,
-    });
-    const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    recordingRef.current = rec;
-    setRecording(rec); setSeconds(0); setPhase('recording'); setMessage('');
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+    recordingActive.current = true;
+    setSeconds(0); setPhase('recording'); setMessage('');
     pendingUpload.current = null;
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
   }, []);
@@ -189,14 +188,13 @@ function Recorder({ session }: { session: Session }) {
   }, [handleUrl]);
 
   async function stopAndUpload() {
-    const rec = recordingRef.current;
-    if (!rec) return;
+    if (!recordingActive.current) return;
     if (timer.current) clearInterval(timer.current);
     setPhase('uploading');
     try {
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI() ?? '';
-      recordingRef.current = null; setRecording(null);
+      await recorder.stop();
+      const uri = recorder.uri ?? '';
+      recordingActive.current = false;
       if (!uri) throw new Error('Geen opnamebestand gevonden.');
       const startedAt = new Date(Date.now() - seconds * 1000).toISOString();
       pendingUpload.current = { uri, startedAt, duration: seconds };
