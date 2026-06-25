@@ -28,11 +28,11 @@ function platformOf(url: string): string {
        : /webex\./.test(url) ? 'webex' : 'other'
 }
 
-// Externe meeting? = minstens één deelnemer buiten het eigen e-maildomein.
-// Interne meetings (alle deelnemers binnen het eigen domein) slaan we over om
-// kosten te sparen. Werkt voor Google (attendees[].email) en Microsoft
-// (attendees[].emailAddress.address). Geen/onbekende deelnemers → wél opnemen
-// (kan een externe call zijn zonder attendee-lijst; we willen die niet missen).
+// Klantgesprek? = minstens één deelnemer buiten het eigen e-maildomein.
+// Interne meetings (alle deelnemers binnen het eigen domein) én persoonlijke
+// agenda-items ZONDER deelnemers (bv. een herinnering met auto-Meet-link) slaan
+// we over → de bot springt enkel op échte klantgesprekken. Werkt voor Google
+// (attendees[].email) en Microsoft (attendees[].emailAddress.address).
 function attendeeEmails(ev: any): string[] {
   const raw = ev?.raw ?? {}
   const list = Array.isArray(raw.attendees) ? raw.attendees : []
@@ -46,9 +46,9 @@ function attendeeEmails(ev: any): string[] {
 }
 function isExternalMeeting(ev: any, ownDomain: string | null): boolean {
   const emails = attendeeEmails(ev).filter((e) => e.split('@')[1] !== undefined)
-  const others = ownDomain ? emails.filter((e) => e.split('@')[1] !== ownDomain) : emails
-  if (emails.length === 0) return true            // geen attendee-info → niet riskeren, opnemen
-  return others.length > 0                         // ≥1 deelnemer buiten eigen domein
+  if (emails.length === 0) return false            // geen deelnemers → persoonlijk/intern → geen bot
+  if (!ownDomain) return true                      // domein onbekend, maar er zijn deelnemers → opnemen
+  return emails.some((e) => e.split('@')[1] !== ownDomain) // ≥1 deelnemer buiten eigen domein
 }
 
 // Branded cover (1280x720 JPEG) die de bot in de meeting toont — uit de
