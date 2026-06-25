@@ -41,7 +41,8 @@
           "microphonePermission": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "./plugins/withFmtFix"
     ],
     "extra": {
       "eas": {
