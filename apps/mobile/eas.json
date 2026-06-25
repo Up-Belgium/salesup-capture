@@ -8,12 +8,13 @@
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "simulator": false },
+      "ios": { "simulator": false, "image": "latest" },
       "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "ios": { "image": "latest" }
     }
   },
   "submit": {
