@@ -86,20 +86,22 @@ function Login() {
     setBusy(false);
   }
 
-  // Stap 1: verstuur een 6-cijferige code naar de mailbox.
+  // Stap 1: verstuur een code naar de mailbox.
   async function requestCode() {
     if (!email.trim()) { setError('Vul eerst je e-mailadres in.'); return; }
     setBusy(true); setError(''); setInfo('');
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim());
-    if (err) setError('Kon geen code versturen — controleer je e-mailadres.');
-    else { setMode('reset_verify'); setInfo('We stuurden een 6-cijferige code naar je mailbox.'); }
+    if (err) setError(/rate|limit|seconds/i.test(err.message || '')
+      ? 'Te veel pogingen — wacht even en probeer opnieuw.'
+      : 'Kon geen code versturen — controleer je e-mailadres.');
+    else { setMode('reset_verify'); setInfo('We stuurden een code naar je mailbox.'); }
     setBusy(false);
   }
 
   // Stap 2: verifieer de code en zet meteen het nieuwe wachtwoord.
   async function verifyAndSet() {
-    if (code.trim().length < 6 || newPassword.length < 8) {
-      setError('Vul de 6-cijferige code in en een wachtwoord van minstens 8 tekens.'); return;
+    if (code.trim().length < 4 || newPassword.length < 8) {
+      setError('Vul de code uit de e-mail in en een wachtwoord van minstens 8 tekens.'); return;
     }
     setBusy(true); setError(''); setInfo('');
     const { error: vErr } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
@@ -152,8 +154,8 @@ function Login() {
 
       {mode === 'reset_verify' && (
         <View style={styles.card}>
-          <TextInput style={styles.input} placeholder="6-cijferige code" placeholderTextColor="#aab0bf"
-            keyboardType="number-pad" maxLength={6} value={code} onChangeText={setCode} />
+          <TextInput style={styles.input} placeholder="Code uit de e-mail" placeholderTextColor="#aab0bf"
+            autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} />
           <TextInput style={styles.input} placeholder="Nieuw wachtwoord (min. 8 tekens)" placeholderTextColor="#aab0bf"
             secureTextEntry value={newPassword} onChangeText={setNewPassword} />
           <Pressable style={[styles.primary, busy && styles.disabled]} onPress={verifyAndSet} disabled={busy}>
