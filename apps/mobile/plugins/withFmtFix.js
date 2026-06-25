@@ -12,6 +12,10 @@ const INJECT = `
       __t.build_configurations.each do |__bc|
         __bc.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
         __bc.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_USE_CONSTEVAL=0'
+        __bc.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'FMT_CONSTEVAL=constexpr'
+        __existing = __bc.build_settings['OTHER_CPLUSPLUSFLAGS'] || ['$(inherited)']
+        __existing = [__existing] unless __existing.is_a?(Array)
+        __bc.build_settings['OTHER_CPLUSPLUSFLAGS'] = __existing + ['-DFMT_USE_CONSTEVAL=0', '-DFMT_CONSTEVAL=constexpr']
       end
     end`;
 
