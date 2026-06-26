@@ -16,10 +16,40 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
 import * as FileSystem from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, Session } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, INGEST_URL } from './src/config';
+
+// Toon meeting-herinneringen ook als de app open is.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+});
+
+// Vraag pushrechten, haal de Expo-token en registreer 'm bij de backend.
+async function registerForPush(accessToken: string) {
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('meetings', {
+        name: 'Meetings', importance: Notifications.AndroidImportance.HIGH, sound: 'default',
+      });
+    }
+    const cur = await Notifications.getPermissionsAsync();
+    let granted = cur.granted || cur.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+    if (!granted) granted = (await Notifications.requestPermissionsAsync()).granted;
+    if (!granted) return;
+    const projectId = (Constants?.expoConfig as any)?.extra?.eas?.projectId;
+    const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
+    if (!token) return;
+    await fetch(`${SUPABASE_URL}/functions/v1/register-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ token }),
+    });
+  } catch { /* push is best-effort */ }
+}
 
 const C = {
   bg: '#eef1f6', surface: '#ffffff', ink: '#1a2540', muted: '#6b7488',
@@ -55,6 +85,18 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setBooting(false); });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // Push registreren zodra er een sessie is.
+  useEffect(() => { if (session?.access_token) registerForPush(session.access_token); }, [session?.access_token]);
+
+  // Tik op een meeting-herinnering → open de opnamemodus (via de bestaande deep link).
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
+      const data = resp.notification.request.content.data as any;
+      if (data?.type === 'record') Linking.openURL('salesupcapture://record').catch(() => {});
+    });
+    return () => sub.remove();
   }, []);
 
   if (booting) return <View style={[styles.screen, styles.center]}><ActivityIndicator color={C.orange} size="large" /></View>;
