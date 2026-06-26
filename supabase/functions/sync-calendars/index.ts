@@ -59,6 +59,23 @@ function isExternalMeeting(ev: any, ownDomain: string | null): boolean {
   return domains.some((d) => d !== ownDomain && !FREE_MAIL_DOMAINS.has(d))
 }
 
+// Fysieke locatie? = een echt adres in het event, geen (video)link. Google geeft
+// raw.location (string), Microsoft raw.location.displayName. Zo'n event is een
+// face-to-face afspraak → géén bot (ook al voegde de agenda automatisch een
+// Meet-link toe); notify-meetings stuurt er een opname-herinnering voor.
+function eventLocation(ev: any): string {
+  const raw = ev?.raw ?? {}
+  const loc = (typeof raw.location === 'string' ? raw.location : (raw.location?.displayName ?? '')).toString().trim()
+  return loc
+}
+function isInPerson(ev: any): boolean {
+  const loc = eventLocation(ev)
+  if (!loc) return false
+  if (/^https?:\/\//i.test(loc)) return false               // locatie is een URL → niet fysiek
+  if (/(meet\.google|zoom\.|teams\.|webex\.)/i.test(loc)) return false
+  return true
+}
+
 // Branded cover (1280x720 JPEG) die de bot in de meeting toont — uit de
 // publieke assets-bucket, éénmalig per run base64-gecodeerd.
 function toB64(bytes: Uint8Array): string {
@@ -108,6 +125,8 @@ Deno.serve(async (req) => {
         events: evs.slice(0, 12).map((e: any) => ({
           start_time: e?.start_time,
           has_meeting_url: !!(e?.meeting_url ?? e?.meeting_platform_url),
+          location: eventLocation(e),
+          in_person: isInPerson(e),
           bots: e?.bots ?? null,  // toont de echte structuur van geplande bots
         })),
       })
@@ -120,7 +139,7 @@ Deno.serve(async (req) => {
   const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()
   const coverB64 = await loadCover()
 
-  let scheduled = 0, skipped = 0, errors = 0, internal = 0
+  let scheduled = 0, skipped = 0, errors = 0, internal = 0, inPerson = 0
   let lastErrorCode: string | null = null  // generieke hint (bv. 402 credit) zonder details te lekken
   for (const m of membersList ?? []) {
     try {
@@ -142,6 +161,9 @@ Deno.serve(async (req) => {
           // Al afgelopen meetings overslaan — daar kan geen bot meer voor joinen.
           const endMs = ev?.end_time ? new Date(ev.end_time).getTime() : null
           if (endMs && endMs < now) continue
+          // Fysieke afspraak (echt adres) → geen bot, ook al hangt er een Meet-link aan;
+          // notify-meetings stuurt hiervoor een opname-herinnering naar de telefoon.
+          if (isInPerson(ev)) { inPerson++; continue }
           // Interne meetings (alle deelnemers binnen eigen domein) overslaan.
           if (!isExternalMeeting(ev, ownDomain)) { internal++; continue }
 
@@ -199,7 +221,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} intern-overgeslagen=${internal} fouten=${errors}`)
+  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} intern=${internal} fysiek=${inPerson} fouten=${errors}`)
 
   // Krediet-alarm: bij Recall 402 (insufficient_credit) vielen meetings vroeger
   // STILLETJES weg (de cron leest niemand). We mailen nu de owner(s) zodat dit
@@ -208,7 +230,7 @@ Deno.serve(async (req) => {
     try { await alertOwners(sb) } catch (e) { console.error(`sync-calendars: krediet-alarm faalde: ${e}`) }
   }
 
-  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, internal, errors, hint: lastErrorCode })
+  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, internal, in_person: inPerson, errors, hint: lastErrorCode })
 })
 
 // Mailt actieve owners dat het Recall-krediet op is. Graceful skip zonder

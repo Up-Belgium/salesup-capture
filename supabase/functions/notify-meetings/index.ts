@@ -32,6 +32,17 @@ function isExternalBusiness(ev: any, ownDomain: string | null): boolean {
   if (domains.length === 0) return false
   return domains.some((d) => d !== ownDomain && !FREE_MAIL.has(d))
 }
+// Fysieke afspraak? = echt adres (geen videolink) — Google raw.location (string),
+// Microsoft raw.location.displayName. Zulke events zijn F2F en horen een push te krijgen.
+function eventLocation(ev: any): string {
+  const raw = ev?.raw ?? {}
+  return (typeof raw.location === 'string' ? raw.location : (raw.location?.displayName ?? '')).toString().trim()
+}
+function isInPerson(ev: any): boolean {
+  const loc = eventLocation(ev)
+  if (!loc || /^https?:\/\//i.test(loc) || /(meet\.google|zoom\.|teams\.|webex\.)/i.test(loc)) return false
+  return true
+}
 
 async function sendPush(token: string, title: string, eventTitle: string): Promise<string> {
   const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -75,9 +86,11 @@ Deno.serve(async () => {
       const events = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : [])
       for (const ev of events) {
         if (ev?.is_deleted) continue
-        const meetingUrl = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
-        if (meetingUrl) continue                       // heeft videolink → bot doet dit al (geen F2F)
         if (!isExternalBusiness(ev, ownDomain)) continue
+        const meetingUrl = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
+        // F2F = fysieke afspraak (echt adres) OF geen videolink (telefoon). Pure
+        // videocall (link, geen adres) → bot doet dit al → geen push.
+        if (!isInPerson(ev) && meetingUrl) continue
         const { data: dup } = await sb.from('meeting_push_log').select('id').eq('member_id', m.id).eq('event_id', ev.id).maybeSingle()
         if (dup) { skipped++; continue }
         const evTitle = (ev?.raw?.summary ?? ev?.title ?? 'je meeting').toString().slice(0, 80)
