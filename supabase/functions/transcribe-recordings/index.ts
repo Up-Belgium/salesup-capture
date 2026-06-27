@@ -10,6 +10,17 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// cron-guard: deze functie wordt door pg_cron getriggerd met de publieke anon-key
+// (zit ook in de mobiele app). Extra gedeeld geheim: cron stuurt header
+// x-cron-secret (uit Vault), functie vergelijkt met env CRON_SECRET. FAIL-OPEN:
+// zolang CRON_SECRET niet gezet is, laat de guard alles door (breekt niets).
+function cronForbidden(req: Request): Response | null {
+  const expected = (Deno.env.get('CRON_SECRET') ?? '').trim()
+  if (!expected) return null
+  const got = (req.headers.get('x-cron-secret') ?? '').trim()
+  if (got === expected) return null
+  return new Response(JSON.stringify({ error: 'forbidden (cron-secret)' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+}
 
 const BUCKET = 'recordings'
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&detect_language=true'
@@ -43,6 +54,7 @@ function numOrNull(v: any): number | null {
 }
 
 Deno.serve(async (req) => {
+  const denied = cronForbidden(req); if (denied) return denied
   const dgKey = (Deno.env.get('DEEPGRAM_API_KEY') ?? '').trim()
   if (!dgKey) return json({ ok: false, error: 'DEEPGRAM_API_KEY niet gezet als Edge Function secret' }, 500)
 

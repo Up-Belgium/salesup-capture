@@ -17,6 +17,14 @@
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// cron-guard: zie transcribe-recordings. FAIL-OPEN tot CRON_SECRET gezet is.
+function cronForbidden(req: Request): Response | null {
+  const expected = (Deno.env.get('CRON_SECRET') ?? '').trim()
+  if (!expected) return null
+  const got = (req.headers.get('x-cron-secret') ?? '').trim()
+  if (got === expected) return null
+  return new Response(JSON.stringify({ error: 'forbidden (cron-secret)' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+}
 
 const MAX_AGE_H = 24 // bots ouder dan 24u zonder transcript → error
 
@@ -62,6 +70,7 @@ function botFailed(bot: any): boolean {
 }
 
 Deno.serve(async (req) => {
+  const denied = cronForbidden(req); if (denied) return denied
   const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
   if (!recallKey) return json({ ok: false, error: 'RECALL_API_KEY niet gezet als Edge Function secret' }, 500)
   const recallUrl = (Deno.env.get('RECALL_API_URL') ?? 'https://eu-central-1.recall.ai').trim()
