@@ -15,7 +15,10 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
+// Legacy-import: uploadAsync (streaming PUT, ideaal voor grote audio) is in
+// expo-file-system SDK 54+ uit de hoofd-entry weggehaald en gooit daar nu een
+// deprecation-fout. De legacy-API blijft volledig werken met dezelfde signatuur.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import 'react-native-url-polyfill/auto';
