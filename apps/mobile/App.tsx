@@ -281,7 +281,11 @@ function Recorder({ session }: { session: Session }) {
     if (!org) { Alert.alert('Kies een klant', 'Selecteer onder "Meer opties" voor welke klant je opneemt.'); return; }
     const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microfoon vereist', 'Geef toegang tot de microfoon om op te nemen.'); return; }
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    // shouldPlayInBackground houdt de opname-sessie actief als het scherm
+    // vergrendelt of de app naar de achtergrond gaat (werkt op iOS enkel met
+    // allowsRecording:true + UIBackgroundModes:["audio"] in app.json). Zonder
+    // dit stopt iOS de opname zodra de telefoon in sluimerstand gaat.
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: true });
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingActive.current = true;
