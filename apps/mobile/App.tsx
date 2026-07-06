@@ -231,7 +231,11 @@ function Recorder({ session }: { session: Session }) {
   const [botUrl, setBotUrl] = useState('');
   const [botBusy, setBotBusy] = useState(false);
 
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  // Stabiele statusListener → delegeert naar de laatste handler (via ref) zodat
+  // hij altijd de actuele state ziet. Vangt systeem-interrupties (telefoon-
+  // oproep, media-daemon-reset) op de opnamesessie.
+  const onStatusRef = useRef<(s: any) => void>(() => {});
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => onStatusRef.current?.(status));
   const recordingActive = useRef(false);
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed'>('idle');
@@ -325,6 +329,37 @@ function Recorder({ session }: { session: Session }) {
       setPhase('failed'); setMessage(`Versturen mislukt: ${e.message}. De opname staat nog op dit toestel.`);
     }
   }
+
+  // Systeem-interruptie (telefoonoproep, media-daemon-reset): iOS breekt de
+  // opnamesessie af en de recorder wordt ongeldig. We finaliseren en BEWAREN het
+  // reeds opgenomen deel (upload) i.p.v. het te verliezen, en tonen een melding.
+  async function handleInterruption(status: any) {
+    if (!recordingActive.current) return;
+    recordingActive.current = false;
+    if (timer.current) clearInterval(timer.current);
+    const dur = seconds;
+    setPhase('uploading');
+    setMessage('Opname onderbroken (bv. door een telefoonoproep) — het opgenomen deel wordt bewaard en verstuurd.');
+    try {
+      let uri = status?.url ?? '';
+      if (!uri) { try { await recorder.stop(); } catch { /* recorder al ongeldig */ } uri = recorder.uri ?? ''; }
+      if (!uri || dur < 1) { setPhase('failed'); setMessage('Opname werd onderbroken vóór er iets werd opgenomen.'); return; }
+      const startedAt = new Date(Date.now() - dur * 1000).toISOString();
+      pendingUpload.current = { uri, startedAt, duration: dur };
+      await upload(uri, startedAt, dur);
+      setPhase('done'); setMessage('Opname werd onderbroken — het opgenomen deel is bewaard en verstuurd.');
+      setTitle(''); pendingUpload.current = null;
+    } catch (e: any) {
+      setPhase('failed'); setMessage(`Opname onderbroken; versturen mislukt: ${e.message}. Het deel staat nog op dit toestel — gebruik "Opnieuw versturen".`);
+    }
+  }
+  // Houd de listener bij de actuele closure (verse seconds/recType/title).
+  useEffect(() => {
+    onStatusRef.current = (status: any) => {
+      if (!recordingActive.current || status?.isFinished) return;
+      if (status?.mediaServicesDidReset || status?.hasError) handleInterruption(status);
+    };
+  });
 
   async function upload(uri: string, startedAt: string, duration: number) {
     const { data } = await supabase.auth.getSession();
