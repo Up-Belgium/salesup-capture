@@ -7,7 +7,7 @@ Herbruikbaar voor App Store én Play Store. Kies NL of EN afhankelijk van de pri
 - **Categorie:** Business (Zakelijk)
 - **Support-URL:** `<https://salesup.be/capture/support>`
 - **Marketing-URL:** `<https://salesup.be>`
-- **Privacy policy-URL:** `<https://salesup.be/capture/privacy>` (verplicht — publiceer `PRIVACY_POLICY.md`)
+- **Privacy policy-URL:** `<https://salesup.be/privacy-policy>` (verplicht — publiceer `PRIVACY_POLICY.md`)
 - **Content rating / doelgroep:** zakelijke gebruikers (18+/iedereen, geen gevoelige inhoud).
 
 ## Korte omschrijving (Play: max 80 tekens)
