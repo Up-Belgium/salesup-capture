@@ -50,7 +50,8 @@
         {
           "color": "#FF6B35"
         }
-      ]
+      ],
+      "./plugins/withoutMediaPlaybackFgs.js"
     ],
     "extra": {
       "eas": {

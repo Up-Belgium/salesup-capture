@@ -289,7 +289,11 @@ function Recorder({ session }: { session: Session }) {
     // vergrendelt of de app naar de achtergrond gaat (werkt op iOS enkel met
     // allowsRecording:true + UIBackgroundModes:["audio"] in app.json). Zonder
     // dit stopt iOS de opname zodra de telefoon in sluimerstand gaat.
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: true });
+    // shouldPlayInBackground enkel op iOS: daar houdt het de opname-sessie actief
+    // in sluimerstand. Op Android loopt de opname door via de microfoon-
+    // foreground-service; shouldPlayInBackground zou daar onnodig de
+    // MEDIA_PLAYBACK-foreground-service triggeren (die we niet gebruiken).
+    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: Platform.OS === 'ios' });
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingActive.current = true;
