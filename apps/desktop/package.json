@@ -32,7 +32,9 @@
       }
     },
     "win": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "target": ["nsis"],
+      "artifactName": "salesUp-Capture-Setup-${version}.exe"
     }
   },
   "dependencies": {

@@ -59,9 +59,17 @@
       <button id="loginBtn" style="width:100%">Inloggen</button>
       <p id="loginErr" class="err"></p>
     </div>
-    <div class="card dl">
-      <div><div class="mtitle">Desktop-app</div><div class="muted">Neem je videocalls automatisch op.</div></div>
-      <a href="https://github.com/stigvh-rgb/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download (Mac)</button></a>
+    <div class="card">
+      <div class="mtitle">Desktop-app</div>
+      <div class="muted" style="margin-bottom:12px">Neem je videocalls automatisch op.</div>
+      <div class="dl" style="gap:10px;flex-wrap:wrap">
+        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Mac (Apple Silicon)</button></a>
+        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-Setup-0.1.0.exe"><button>⬇︎ Windows</button></a>
+      </div>
+      <p class="muted" style="margin-top:12px">
+        <b>Mac</b>, eerste keer: rechterklik op de app → <b>Open</b> (de app is nog niet Apple-genotariseerd).<br>
+        <b>Windows</b>: bij de SmartScreen-melding → <b>Meer info → Toch uitvoeren</b>.
+      </p>
     </div>
   </div>
 
@@ -77,9 +85,13 @@
     <div id="downloadPane" style="display:none">
       <div class="card dl">
         <div><div class="mtitle">salesUp Capture voor Mac</div><div class="muted">Apple Silicon · v0.1.0 · eerste keer: rechterklik → Open</div></div>
-        <a href="https://github.com/stigvh-rgb/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download</button></a>
+        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download</button></a>
       </div>
-      <p class="muted">Inloggen in de app gebeurt met ditzelfde account. Windows volgt.</p>
+      <div class="card dl">
+        <div><div class="mtitle">salesUp Capture voor Windows</div><div class="muted">v0.1.0 · bij SmartScreen: Meer info → Toch uitvoeren</div></div>
+        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-Setup-0.1.0.exe"><button>⬇︎ Download</button></a>
+      </div>
+      <p class="muted">Inloggen in de app gebeurt met ditzelfde account.</p>
     </div>
   </div>
 </div>
