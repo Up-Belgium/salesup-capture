@@ -3,11 +3,17 @@
 > Field "App Review Information → Notes". Written in English for the reviewer.
 > Turn ON "Sign-in required" and fill the demo account below.
 
-## Demo account (create this in the Capture project before submitting)
-- **Username:** `<REVIEWER_EMAIL>`  ← e.g. review@salesup.be
-- **Password:** `<REVIEWER_PASSWORD>`  ← set your own; fill it in here (do not commit it)
+## Demo account
+- **Username:** `review@salesup.be`  ← al aangemaakt (geïsoleerde org "salesUp Demo (App Review)", geen echte klantdata)
+- **Password:** `<VUL_IN>`  ← zet je zelf (zie hieronder); vul hier in bij het indienen, commit het NIET
 
-> Stig: create this as a real member in the salesUp Capture Supabase project so the reviewer can log in. Give it access to a demo organization with at least one processed recording so the history screen isn't empty.
+> Het account bestaat al in het Capture-project (e-mail bevestigd, member=owner van een lege demo-org). **Zet enkel nog het wachtwoord** door dit één keer te draaien in de Supabase SQL-editor van het Capture-project (`plbuczbxtauhuobkicdr`):
+> ```sql
+> UPDATE auth.users
+> SET encrypted_password = crypt('KIES-EEN-STERK-WACHTWOORD', gen_salt('bf'))
+> WHERE email = 'review@salesup.be';
+> ```
+> De reviewer test door zélf een korte opname te maken (de historiek is bewust leeg = geen klant-PII).
 
 ## Review notes (paste as-is)
 ```
