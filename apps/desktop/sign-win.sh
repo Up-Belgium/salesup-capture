@@ -1,42 +1,43 @@
 #!/usr/bin/env bash
-# Signeert de Windows-installer met SSL.com eSigner CodeSignTool (EV, cloud-HSM).
-# Werkt op macOS — geen Windows nodig. Signeert de bestaande .exe IN-PLACE,
-# dus geen herbouw. Daarna gewoon opnieuw uploaden naar de GitHub-release.
+# Signeert de Windows-installer met een Certum EV-certificaat in de cloud
+# (SimplySign) via jsign + PKCS#11. Werkt op macOS — geen Windows nodig, en
+# GEEN herbouw: het signeert de bestaande .exe in-place.
 #
-# Vereisten:
-#   - Java (JRE) geinstalleerd:  brew install --cask temurin   (of een andere JDK)
-#   - CodeSignTool uitgepakt (download bij SSL.com) in ./CodeSignTool
-#     of geef de map mee via env CODESIGNTOOL_DIR.
+# Vereisten (eenmalig):
+#   - Java:            brew install --cask temurin
+#   - jsign:           brew install jsign
+#   - SimplySign Desktop (van Certum) geinstalleerd + ingelogd (levert de PKCS#11-
+#     module + een virtuele kaartlezer). SimplySign mobiele app voor de OTP/2FA.
 #
-# Credentials via env (NOOIT in dit bestand of in git):
-#   ESIGNER_USERNAME       je SSL.com-account e-mail
-#   ESIGNER_PASSWORD       je SSL.com-wachtwoord
-#   ESIGNER_CREDENTIAL_ID  via:  ./CodeSignTool.sh get_credential_ids -username=... -password=...
-#   ESIGNER_TOTP_SECRET    de TOTP-secret uit je eSigner-instellingen (voor automatisch signeren)
+# Vul het PKCS#11-modulepad + alias in via env (NOOIT secrets in git):
+#   CERTUM_PKCS11_LIB   pad naar de SimplySign PKCS#11-library (.dylib) — zie doc
+#   CERTUM_ALIAS        certificaat-alias in de token (jsign --storetype PKCS11 toont de aliassen)
+#   CERTUM_PIN          je SimplySign PIN/wachtwoord
 #
 # Gebruik:
-#   export ESIGNER_USERNAME=... ESIGNER_PASSWORD=... ESIGNER_CREDENTIAL_ID=... ESIGNER_TOTP_SECRET=...
+#   export CERTUM_PKCS11_LIB=... CERTUM_ALIAS=... CERTUM_PIN=...
 #   ./sign-win.sh dist/salesUp-Capture-Setup-0.1.0.exe
 set -euo pipefail
 
 EXE="${1:-dist/salesUp-Capture-Setup-0.1.0.exe}"
-TOOL_DIR="${CODESIGNTOOL_DIR:-./CodeSignTool}"
-
 [ -f "$EXE" ] || { echo "Bestand niet gevonden: $EXE"; exit 1; }
-[ -x "$TOOL_DIR/CodeSignTool.sh" ] || { echo "CodeSignTool niet gevonden in $TOOL_DIR (download bij SSL.com en pak uit)"; exit 1; }
-: "${ESIGNER_USERNAME:?zet ESIGNER_USERNAME}"
-: "${ESIGNER_PASSWORD:?zet ESIGNER_PASSWORD}"
-: "${ESIGNER_CREDENTIAL_ID:?zet ESIGNER_CREDENTIAL_ID}"
-: "${ESIGNER_TOTP_SECRET:?zet ESIGNER_TOTP_SECRET}"
+: "${CERTUM_PKCS11_LIB:?zet CERTUM_PKCS11_LIB (pad naar de SimplySign PKCS#11 .dylib)}"
+: "${CERTUM_ALIAS:?zet CERTUM_ALIAS}"
+: "${CERTUM_PIN:?zet CERTUM_PIN}"
+
+# PKCS#11-config voor jsign (tijdelijk bestand, geen secrets erin).
+CFG="$(mktemp)"
+trap 'rm -f "$CFG"' EXIT
+printf 'name = Certum\nlibrary = %s\nslot = 0\n' "$CERTUM_PKCS11_LIB" > "$CFG"
 
 echo "Signeren: $EXE"
-"$TOOL_DIR/CodeSignTool.sh" sign \
-  -username="$ESIGNER_USERNAME" \
-  -password="$ESIGNER_PASSWORD" \
-  -credential_id="$ESIGNER_CREDENTIAL_ID" \
-  -totp_secret="$ESIGNER_TOTP_SECRET" \
-  -input_file_path="$EXE" \
-  -override="true"
+jsign \
+  --storetype PKCS11 \
+  --keystore "$CFG" \
+  --storepass "$CERTUM_PIN" \
+  --alias "$CERTUM_ALIAS" \
+  --tsaurl http://time.certum.pl \
+  "$EXE"
 
 echo "Klaar. Getekend bestand: $EXE"
-echo "Controle (optioneel, op een Windows-pc): rechterklik .exe -> Eigenschappen -> Digitale handtekeningen."
+echo "Tip: aliassen tonen kan met  jsign --storetype PKCS11 --keystore \"$CFG\" --storepass '<PIN>'"
