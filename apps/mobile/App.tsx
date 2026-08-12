@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 // Legacy-import: uploadAsync (streaming PUT, ideaal voor grote audio) is in
 // expo-file-system SDK 54+ uit de hoofd-entry weggehaald en gooit daar nu een
 // deprecation-fout. De legacy-API blijft volledig werken met dezelfde signatuur.
@@ -297,6 +298,9 @@ function Recorder({ session }: { session: Session }) {
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingActive.current = true;
+    // Scherm wakker houden tijdens de opname: anders gaat de telefoon in
+    // auto-sluimerstand en stopt iOS de opname (naast de background-audio-modus).
+    activateKeepAwakeAsync().catch(() => {});
     setSeconds(0); setPhase('recording'); setMessage('');
     pendingUpload.current = null;
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -317,6 +321,7 @@ function Recorder({ session }: { session: Session }) {
 
   async function stopAndUpload() {
     if (!recordingActive.current) return;
+    Promise.resolve(deactivateKeepAwake()).catch(() => {});
     if (timer.current) clearInterval(timer.current);
     setPhase('uploading');
     try {
