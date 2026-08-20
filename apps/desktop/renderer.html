@@ -50,6 +50,7 @@
       width: 100%; padding: 11px 13px; border-radius: 11px;
       border: 1px solid var(--line); background: #fbfcfe;
       color: var(--ink); font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s;
+      font-family: inherit; /* formuliervelden erven font NIET vanzelf → anders tofu bij een kapot standaard-formulierfont (zie Kenny, aug 2026) */
     }
     input::placeholder { color: #aab0bf; }
     input:focus, select:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(255,107,53,.12); }
@@ -59,6 +60,7 @@
       width: 100%; padding: 13px; border: none; border-radius: 12px;
       background: var(--orange); color: #fff; font-size: 14.5px; font-weight: 700; cursor: pointer;
       transition: transform .08s ease, filter .15s, opacity .15s;
+      font-family: inherit; /* idem: knop erft font niet vanzelf */
     }
     button:hover { filter: brightness(1.05); }
     button:active { transform: translateY(1px); }
