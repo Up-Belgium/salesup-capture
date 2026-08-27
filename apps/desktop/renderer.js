@@ -189,23 +189,26 @@ async function refreshCalStatus() {
   try {
     const s = await calOAuth('status');
     if (s.connected) {
-      $('calStatus').textContent = `Agenda verbonden${s.calendar_email ? ` (${s.calendar_email})` : ''} ✓ — meetings worden automatisch opgenomen.`;
+      const plat = s.calendar_platform === 'microsoft_outlook' ? 'Microsoft / Outlook' : 'Google';
+      $('calStatus').textContent = `Agenda verbonden via ${plat}${s.calendar_email ? ` (${s.calendar_email})` : ''} ✓ — meetings worden automatisch opgenomen.`;
       $('calBtn').textContent = '📅 Agenda ontkoppelen';
       $('calBtn').dataset.connected = '1';
+      $('calBtnMs').style.display = 'none';
     } else {
-      $('calStatus').textContent = 'Agenda nog niet verbonden.';
-      $('calBtn').textContent = '📅 Verbind Google Agenda — neem al je meetings automatisch op';
+      $('calStatus').textContent = 'Agenda nog niet verbonden. Kies je agenda:';
+      $('calBtn').textContent = '📅 Verbind Google Agenda';
       $('calBtn').dataset.connected = '';
+      $('calBtnMs').style.display = '';
     }
   } catch (_) {}
 }
 // calendar-oauth heeft een eigen endpoint; we hergebruiken ingest() niet (andere functie)
-async function calOAuth(action) {
+async function calOAuth(action, provider) {
   const token = await freshToken();
   const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-oauth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(provider ? { action, provider } : { action }),
   });
   const json = await res.json();
   if (!res.ok || json.ok === false) throw new Error(json.error || `Fout (${res.status})`);
@@ -217,10 +220,21 @@ $('calBtn').addEventListener('click', async () => {
       await calOAuth('disconnect');
       setMsg('mainMsg', 'Agenda ontkoppeld.', 'hint');
     } else {
-      const { url } = await calOAuth('auth_url');
+      const { url } = await calOAuth('auth_url', 'google');
       await window.capture.openExternal(url);
       setMsg('mainMsg', 'Het Google-toestemmingsscherm is geopend in je browser. Na "Toestaan" is je agenda verbonden — klik daarna hieronder op Vernieuwen.', 'hint');
     }
+    setTimeout(refreshCalStatus, 1500);
+  } catch (e) {
+    setMsg('mainMsg', e.message, 'err');
+  }
+});
+
+$('calBtnMs').addEventListener('click', async () => {
+  try {
+    const { url } = await calOAuth('auth_url', 'microsoft');
+    await window.capture.openExternal(url);
+    setMsg('mainMsg', 'Het Microsoft-toestemmingsscherm is geopend in je browser. Na "Toestaan" is je Outlook-agenda verbonden — klik daarna hieronder op Vernieuwen.', 'hint');
     setTimeout(refreshCalStatus, 1500);
   } catch (e) {
     setMsg('mainMsg', e.message, 'err');
