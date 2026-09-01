@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Linking, Platform, Pressable,
   ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -238,8 +238,10 @@ function Recorder({ session }: { session: Session }) {
   const onStatusRef = useRef<(s: any) => void>(() => {});
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => onStatusRef.current?.(status));
   const recordingActive = useRef(false);
+  const interruptedRef = useRef(false); // true = opname onderbroken (bv. oproep), klaar om te hervatten
+  const segmentRef = useRef(0);         // 0 = eerste segment; >0 = vervolgsegment na onderbreking
   const [seconds, setSeconds] = useState(0);
-  const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed' | 'interrupted'>('idle');
   const [message, setMessage] = useState('');
   const pendingUpload = useRef<{ uri: string; startedAt: string; duration: number } | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -276,7 +278,7 @@ function Recorder({ session }: { session: Session }) {
     })();
   }, [session.access_token]);
 
-  const start = useCallback(async (opts?: { fromDeepLink?: boolean }) => {
+  const start = useCallback(async (opts?: { fromDeepLink?: boolean; resume?: boolean }) => {
     if (recordingActive.current) return; // al bezig
     if (!consentRef.current) {
       Alert.alert('Eerst consent', 'Zet "Ik informeer mijn gesprekspartners" aan om (snel) te kunnen opnemen.');
@@ -298,6 +300,8 @@ function Recorder({ session }: { session: Session }) {
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingActive.current = true;
+    interruptedRef.current = false;
+    if (!opts?.resume) segmentRef.current = 0; // nieuwe opname → segmentteller resetten
     // Scherm wakker houden tijdens de opname: anders gaat de telefoon in
     // auto-sluimerstand en stopt iOS de opname (naast de background-audio-modus).
     activateKeepAwakeAsync().catch(() => {});
@@ -318,6 +322,26 @@ function Recorder({ session }: { session: Session }) {
     const sub = Linking.addEventListener('url', (e) => handleUrl(e.url));
     return () => sub.remove();
   }, [handleUrl]);
+
+  // Hervat na een onderbreking: start een nieuw segment en tel het mee (voor de titel).
+  const resume = useCallback(() => {
+    interruptedRef.current = false;
+    segmentRef.current += 1;
+    start({ resume: true });
+  }, [start]);
+
+  // Automatisch hervatten zodra de app na de onderbreking (bv. een oproep) weer
+  // op de voorgrond komt, zolang consent + klant nog gezet zijn. De Hervat-knop
+  // blijft als vangnet voor het geval de app niet vanzelf actief wordt.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active' && interruptedRef.current && !recordingActive.current
+          && consentRef.current && clientIdRef.current) {
+        resume();
+      }
+    });
+    return () => sub.remove();
+  }, [resume]);
 
   async function stopAndUpload() {
     if (!recordingActive.current) return;
@@ -345,21 +369,31 @@ function Recorder({ session }: { session: Session }) {
   async function handleInterruption(status: any) {
     if (!recordingActive.current) return;
     recordingActive.current = false;
+    interruptedRef.current = true; // klaar om te hervatten (automatisch of via de knop)
     if (timer.current) clearInterval(timer.current);
     const dur = seconds;
     setPhase('uploading');
-    setMessage('Opname onderbroken (bv. door een telefoonoproep) — het opgenomen deel wordt bewaard en verstuurd.');
+    setMessage('Opname onderbroken (bv. door een oproep) — het opgenomen deel wordt bewaard.');
     try {
       let uri = status?.url ?? '';
       if (!uri) { try { await recorder.stop(); } catch { /* recorder al ongeldig */ } uri = recorder.uri ?? ''; }
-      if (!uri || dur < 1) { setPhase('failed'); setMessage('Opname werd onderbroken vóór er iets werd opgenomen.'); return; }
+      if (!uri || dur < 1) {
+        // Nog niets opgenomen: niets te bewaren, maar wel meteen kunnen hervatten.
+        setPhase('interrupted');
+        setMessage('Opname onderbroken (bv. een oproep) vóór er iets werd opgenomen. Tik op Hervatten om verder op te nemen.');
+        return;
+      }
       const startedAt = new Date(Date.now() - dur * 1000).toISOString();
       pendingUpload.current = { uri, startedAt, duration: dur };
       await upload(uri, startedAt, dur);
-      setPhase('done'); setMessage('Opname werd onderbroken — het opgenomen deel is bewaard en verstuurd.');
-      setTitle(''); pendingUpload.current = null;
+      pendingUpload.current = null;
+      setPhase('interrupted');
+      setMessage('Opname onderbroken (bv. een oproep). Het opgenomen deel is bewaard en verstuurd. Tik op Hervatten om verder op te nemen.');
     } catch (e: any) {
-      setPhase('failed'); setMessage(`Opname onderbroken; versturen mislukt: ${e.message}. Het deel staat nog op dit toestel — gebruik "Opnieuw versturen".`);
+      // Bewaren mislukte: het deel staat nog op het toestel. Hervatten kan alsnog,
+      // en het deel kan later opnieuw verstuurd worden.
+      setPhase('interrupted');
+      setMessage(`Opname onderbroken; het opgenomen deel staat nog op dit toestel (${e.message}). Tik op Hervatten om verder op te nemen, en verstuur het deel eventueel later opnieuw.`);
     }
   }
   // Houd de listener bij de actuele closure (verse seconds/recType/title).
@@ -374,8 +408,12 @@ function Recorder({ session }: { session: Session }) {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error('Sessie verlopen — log opnieuw in.');
+    // Vervolgsegmenten (na een onderbreking) krijgen een herkenbaar label.
+    const seg = segmentRef.current;
+    const baseTitle = (title || '').trim();
+    const sendTitle = seg > 0 ? `${baseTitle || 'Opname'} (vervolg ${seg})` : (baseTitle || null);
     const startJson = await ingest('start', {
-      org_id: clientIdRef.current, recording_type: recType, title: title || null, started_at: startedAt, ext: 'm4a',
+      org_id: clientIdRef.current, recording_type: recType, title: sendTitle, started_at: startedAt, ext: 'm4a',
     }, token);
     const up = await FileSystem.uploadAsync(startJson.upload_url, uri, {
       httpMethod: 'PUT', headers: { 'Content-Type': 'audio/mp4', 'x-upsert': 'false' },
@@ -415,6 +453,28 @@ function Recorder({ session }: { session: Session }) {
       <Text style={styles.recHint}>Opname loopt — ook met het scherm uit.{'\n'}{TYPE_LABELS[recType]}</Text>
       <Pressable style={[styles.primary, styles.stop]} onPress={stopAndUpload}>
         <Text style={styles.primaryText}>Stop &amp; verstuur</Text>
+      </Pressable>
+    </View>
+  );
+
+  // ── Onderbroken-scherm (bv. na een oproep) ───────────────────────────────
+  if (phase === 'interrupted') return (
+    <View style={[styles.center, { padding: 28 }]}>
+      <Text style={{ fontSize: 44, marginBottom: 6 }}>⚠️</Text>
+      <Text style={{ fontSize: 20, fontWeight: '700', color: C.ink, marginBottom: 8 }}>Opname onderbroken</Text>
+      <Text style={[styles.recHint, { marginBottom: 22 }]}>
+        {message || 'De opname werd onderbroken (bv. een oproep). Het opgenomen deel is bewaard.'}
+      </Text>
+      <Pressable style={styles.primary} onPress={resume}>
+        <Text style={styles.primaryText}>Hervat opname</Text>
+      </Pressable>
+      {pendingUpload.current && (
+        <Pressable style={[styles.secondary, { marginTop: 10 }]} onPress={retryUpload}>
+          <Text style={styles.secondaryText}>Opgenomen deel opnieuw versturen</Text>
+        </Pressable>
+      )}
+      <Pressable style={styles.linkBtn} onPress={() => { interruptedRef.current = false; segmentRef.current = 0; setTitle(''); setPhase('idle'); setMessage(''); }}>
+        <Text style={styles.link}>Klaar, stoppen</Text>
       </Pressable>
     </View>
   );
