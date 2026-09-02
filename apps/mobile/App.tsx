@@ -239,7 +239,8 @@ function Recorder({ session }: { session: Session }) {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY, (status) => onStatusRef.current?.(status));
   const recordingActive = useRef(false);
   const interruptedRef = useRef(false); // true = opname onderbroken (bv. oproep), klaar om te hervatten
-  const segmentRef = useRef(0);         // 0 = eerste segment; >0 = vervolgsegment na onderbreking
+  const groupRef = useRef<string | null>(null); // recording_id waaraan alle segmenten hangen (één opname)
+  const totalDurationRef = useRef(0);           // som van de segmentduren (voor complete)
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed' | 'interrupted'>('idle');
   const [message, setMessage] = useState('');
@@ -301,7 +302,7 @@ function Recorder({ session }: { session: Session }) {
     recorder.record();
     recordingActive.current = true;
     interruptedRef.current = false;
-    if (!opts?.resume) segmentRef.current = 0; // nieuwe opname → segmentteller resetten
+    if (!opts?.resume) { groupRef.current = null; totalDurationRef.current = 0; } // nieuwe opname → nieuwe groep
     // Scherm wakker houden tijdens de opname: anders gaat de telefoon in
     // auto-sluimerstand en stopt iOS de opname (naast de background-audio-modus).
     activateKeepAwakeAsync().catch(() => {});
@@ -326,8 +327,7 @@ function Recorder({ session }: { session: Session }) {
   // Hervat na een onderbreking: start een nieuw segment en tel het mee (voor de titel).
   const resume = useCallback(() => {
     interruptedRef.current = false;
-    segmentRef.current += 1;
-    start({ resume: true });
+    start({ resume: true }); // zelfde groep (groupRef blijft) → nieuw segment
   }, [start]);
 
   // Automatisch hervatten zodra de app na de onderbreking (bv. een oproep) weer
@@ -355,7 +355,8 @@ function Recorder({ session }: { session: Session }) {
       if (!uri) throw new Error('Geen opnamebestand gevonden.');
       const startedAt = new Date(Date.now() - seconds * 1000).toISOString();
       pendingUpload.current = { uri, startedAt, duration: seconds };
-      await upload(uri, startedAt, seconds);
+      await sendSegment(uri, startedAt, seconds);
+      await finalizeGroup();
       setPhase('done'); setMessage('Opname verstuurd — verslag volgt automatisch per mail.');
       setTitle(''); pendingUpload.current = null;
     } catch (e: any) {
@@ -385,10 +386,10 @@ function Recorder({ session }: { session: Session }) {
       }
       const startedAt = new Date(Date.now() - dur * 1000).toISOString();
       pendingUpload.current = { uri, startedAt, duration: dur };
-      await upload(uri, startedAt, dur);
+      await sendSegment(uri, startedAt, dur); // segment bewaren, opname NIET afsluiten
       pendingUpload.current = null;
       setPhase('interrupted');
-      setMessage('Opname onderbroken (bv. een oproep). Het opgenomen deel is bewaard en verstuurd. Tik op Hervatten om verder op te nemen.');
+      setMessage('Opname onderbroken (bv. een oproep). Het opgenomen deel is bewaard. Tik op Hervatten om verder op te nemen.');
     } catch (e: any) {
       // Bewaren mislukte: het deel staat nog op het toestel. Hervatten kan alsnog,
       // en het deel kan later opnieuw verstuurd worden.
@@ -404,33 +405,64 @@ function Recorder({ session }: { session: Session }) {
     };
   });
 
-  async function upload(uri: string, startedAt: string, duration: number) {
+  // Stuurt één audiosegment. Het eerste segment maakt de opname aan (start), elk
+  // volgend segment (na een onderbreking) hangt eraan (append). Zo blijft alles
+  // één opname; finalizeGroup() sluit ze af en start dan transcriptie + verslag.
+  async function sendSegment(uri: string, startedAt: string, duration: number) {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error('Sessie verlopen — log opnieuw in.');
-    // Vervolgsegmenten (na een onderbreking) krijgen een herkenbaar label.
-    const seg = segmentRef.current;
-    const baseTitle = (title || '').trim();
-    const sendTitle = seg > 0 ? `${baseTitle || 'Opname'} (vervolg ${seg})` : (baseTitle || null);
-    const startJson = await ingest('start', {
-      org_id: clientIdRef.current, recording_type: recType, title: sendTitle, started_at: startedAt, ext: 'm4a',
-    }, token);
-    const up = await FileSystem.uploadAsync(startJson.upload_url, uri, {
+    let uploadUrl: string;
+    if (!groupRef.current) {
+      const startJson = await ingest('start', {
+        org_id: clientIdRef.current, recording_type: recType,
+        title: (title || '').trim() || null, started_at: startedAt, ext: 'm4a',
+      }, token);
+      groupRef.current = startJson.recording_id;
+      uploadUrl = startJson.upload_url;
+    } else {
+      const appendJson = await ingest('append', { recording_id: groupRef.current, ext: 'm4a' }, token);
+      uploadUrl = appendJson.upload_url;
+    }
+    const up = await FileSystem.uploadAsync(uploadUrl, uri, {
       httpMethod: 'PUT', headers: { 'Content-Type': 'audio/mp4', 'x-upsert': 'false' },
     });
     if (up.status < 200 || up.status >= 300) throw new Error(`Upload geweigerd (${up.status})`);
+    totalDurationRef.current += duration;
+  }
+
+  // Sluit de (mogelijk meerdere segmenten tellende) opname af → één verslag.
+  async function finalizeGroup() {
+    if (!groupRef.current) return;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessie verlopen — log opnieuw in.');
     await ingest('complete', {
-      recording_id: startJson.recording_id, ended_at: new Date().toISOString(), duration_seconds: duration,
+      recording_id: groupRef.current, ended_at: new Date().toISOString(),
+      duration_seconds: totalDurationRef.current,
       consent_status: 'informed', consent_method: 'app_notice',
       consent_details: 'Staande consent-bevestiging in de mobiele app.',
     }, token);
+    groupRef.current = null; totalDurationRef.current = 0;
   }
 
   async function retryUpload() {
     const p = pendingUpload.current; if (!p) return;
     setPhase('uploading');
-    try { await upload(p.uri, p.startedAt, p.duration); setPhase('done'); setMessage('Opname alsnog verstuurd.'); pendingUpload.current = null; }
-    catch (e: any) { setPhase('failed'); setMessage(`Versturen mislukt: ${e.message}.`); }
+    try {
+      await sendSegment(p.uri, p.startedAt, p.duration);
+      pendingUpload.current = null;
+      if (interruptedRef.current) {
+        setPhase('interrupted');
+        setMessage('Het opgenomen deel is alsnog verstuurd. Tik op Hervatten om verder op te nemen.');
+      } else {
+        await finalizeGroup();
+        setPhase('done'); setMessage('Opname alsnog verstuurd — verslag volgt per mail.');
+      }
+    } catch (e: any) {
+      setPhase(interruptedRef.current ? 'interrupted' : 'failed');
+      setMessage(`Versturen mislukt: ${e.message}.`);
+    }
   }
 
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
@@ -473,7 +505,12 @@ function Recorder({ session }: { session: Session }) {
           <Text style={styles.secondaryText}>Opgenomen deel opnieuw versturen</Text>
         </Pressable>
       )}
-      <Pressable style={styles.linkBtn} onPress={() => { interruptedRef.current = false; segmentRef.current = 0; setTitle(''); setPhase('idle'); setMessage(''); }}>
+      <Pressable style={styles.linkBtn} onPress={async () => {
+        interruptedRef.current = false;
+        setPhase('uploading');
+        try { await finalizeGroup(); setTitle(''); setPhase('done'); setMessage('Opname afgerond — verslag volgt automatisch per mail.'); }
+        catch (e: any) { setPhase('failed'); setMessage(`Afronden mislukt: ${e.message}. De opname staat nog op dit toestel.`); }
+      }}>
         <Text style={styles.link}>Klaar, stoppen</Text>
       </Pressable>
     </View>

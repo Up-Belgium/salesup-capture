@@ -23,7 +23,9 @@ function cronForbidden(req: Request): Response | null {
 }
 
 const BUCKET = 'recordings'
-const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&detect_language=true'
+// nova-3 + language=multi: NL/FR/EN code-switching, met smart_format + diarize
+// voor leesbare, per-spreker segmenten (gelijk aan de live-config).
+const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&diarize=true&language=multi'
 
 interface Segment { speaker: string | null; start_s: number | null; end_s: number | null; text: string }
 
@@ -81,29 +83,57 @@ Deno.serve(async (req) => {
   for (const rec of todo) {
     try {
       await sb.from('recordings').update({ status: 'transcribing' }).eq('id', rec.id)
-      const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(rec.storage_path)
-      if (dlErr || !blob) throw new Error(`storage download: ${dlErr?.message ?? 'leeg bestand'}`)
 
-      const res = await fetch(DEEPGRAM_URL, {
-        method: 'POST',
-        headers: { Authorization: `Token ${dgKey}`, 'Content-Type': blob.type || 'audio/mp4' },
-        body: blob,
-      })
-      if (!res.ok) throw new Error(`Deepgram ${res.status}: ${(await res.text()).slice(0, 200)}`)
-      const dg = await res.json()
+      // Alle audiosegmenten in volgorde: storage_path = segment 1, daarna de
+      // extra segment_paths (na onderbrekingen). We transcriberen elk segment en
+      // plakken tekst + spreker-segmenten aan elkaar, met een tijd-offset per
+      // segment, zodat één opname ook één transcript/verslag oplevert.
+      const { data: recRow } = await sb.from('recordings').select('segment_paths').eq('id', rec.id).maybeSingle()
+      const extra: string[] = Array.isArray(recRow?.segment_paths) ? recRow.segment_paths : []
+      const paths = [rec.storage_path, ...extra].filter(Boolean)
 
-      const alt = dg?.results?.channels?.[0]?.alternatives?.[0]
-      const fullText: string = String(alt?.transcript ?? '').trim()
+      const allSegments: Segment[] = []
+      const texts: string[] = []
+      let language: string | null = rec.language ?? null
+      let offset = 0
+
+      for (const path of paths) {
+        const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(path)
+        if (dlErr || !blob) throw new Error(`storage download (${path}): ${dlErr?.message ?? 'leeg bestand'}`)
+
+        const res = await fetch(DEEPGRAM_URL, {
+          method: 'POST',
+          headers: { Authorization: `Token ${dgKey}`, 'Content-Type': blob.type || 'audio/mp4' },
+          body: blob,
+        })
+        if (!res.ok) throw new Error(`Deepgram ${res.status}: ${(await res.text()).slice(0, 200)}`)
+        const dg = await res.json()
+
+        const alt = dg?.results?.channels?.[0]?.alternatives?.[0]
+        const segs = extractSegments(dg)
+        const partText = segs.length > 0
+          ? segs.map((s) => (s.speaker ? `${s.speaker}: ${s.text}` : s.text)).join('\n')
+          : String(alt?.transcript ?? '').trim()
+        if (partText) texts.push(partText)
+        for (const s of segs) {
+          allSegments.push({
+            ...s,
+            start_s: s.start_s != null ? s.start_s + offset : null,
+            end_s: s.end_s != null ? s.end_s + offset : null,
+          })
+        }
+        if (language == null) language = dg?.results?.channels?.[0]?.detected_language ?? null
+        const dur = numOrNull(dg?.metadata?.duration) ?? (segs.length ? (segs[segs.length - 1].end_s ?? 0) : 0)
+        offset += dur ?? 0
+      }
+
+      const fullText = texts.join('\n').trim()
       if (!fullText) throw new Error('Deepgram gaf een leeg transcript (stilte of onleesbare audio?)')
-      const segments = extractSegments(dg)
-      const language = dg?.results?.channels?.[0]?.detected_language ?? rec.language ?? null
 
       const { error: rpcErr } = await sb.rpc('register_transcript', {
         p_recording_id: rec.id,
-        p_full_text: segments.length > 0
-          ? segments.map((s) => (s.speaker ? `${s.speaker}: ${s.text}` : s.text)).join('\n')
-          : fullText,
-        p_segments: segments.length > 0 ? segments : null,
+        p_full_text: fullText,
+        p_segments: allSegments.length > 0 ? allSegments : null,
         p_language: language,
         p_provider: 'deepgram',
       })

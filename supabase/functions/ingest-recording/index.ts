@@ -129,6 +129,31 @@ Deno.serve(async (req) => {
         return json({ ok: true, recording_id: rec.id, storage_path, upload_url: up.signedUrl, token: up.token })
       }
 
+      case 'append': {
+        // Extra audiosegment aan een BESTAANDE opname toevoegen (na een
+        // onderbreking, bv. een oproep). Geen nieuwe recordings-rij: we maken enkel
+        // een nieuw storage-pad + upload-URL en hangen dat pad aan segment_paths.
+        // transcribe-recordings plakt storage_path + segment_paths later aan elkaar
+        // tot één transcript/verslag.
+        if (!body.recording_id) return json({ ok: false, error: 'recording_id verplicht' }, 400)
+        const { data: rec } = await sb.from('recordings')
+          .select('id, org_id, segment_paths').eq('id', body.recording_id).maybeSingle()
+        if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
+        if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
+
+        const ext = EXT_OK.includes(String(body.ext)) ? body.ext : 'm4a'
+        const segNr = (rec.segment_paths?.length ?? 0) + 1
+        const seg_path = `${rec.org_id}/${rec.id}/seg-${segNr}.${ext}`
+        const { data: up, error: upErr } = await sb.storage.from(BUCKET).createSignedUploadUrl(seg_path)
+        if (upErr) throw new Error(upErr.message)
+        const paths = [...(rec.segment_paths ?? []), seg_path]
+        const { error: updErr } = await sb.from('recordings').update({ segment_paths: paths }).eq('id', rec.id)
+        if (updErr) throw new Error(updErr.message)
+
+        console.log(`ingest: append seg ${segNr} → ${rec.id} (via ${caller.kind})`)
+        return json({ ok: true, recording_id: rec.id, storage_path: seg_path, upload_url: up.signedUrl, token: up.token })
+      }
+
       case 'complete': {
         if (!body.recording_id) return json({ ok: false, error: 'recording_id verplicht' }, 400)
         const { data: rec } = await sb.from('recordings')
