@@ -12,8 +12,10 @@ AI-scorecards → competentie-analyse, allemaal bestaand).
    klant, trainer → toegewezen klanten, agency → alles).
 2. Type kiezen (fysieke meeting / telefoon-op-speaker / videocall), consent-schakelaar
    **verplicht** vóór de start (GDPR — wordt als `app_notice` gelogd in `capture_consents`).
-3. Opnemen — loopt door op de achtergrond en met het scherm uit
-   (iOS `UIBackgroundModes: audio`, Android foreground service).
+3. Opnemen. De app houdt het scherm wakker tijdens de opname. Op iOS blijft de
+   opname lopen zolang het scherm aan is (auto-vergrendelen wordt tegengehouden);
+   het scherm handmatig uitzetten pauzeert de opname (bekende expo-audio-beperking).
+   Android loopt door via een foreground service. (iOS `UIBackgroundModes: audio`.)
 4. Stop & verstuur — upload via signed URL naar de privé-bucket; mislukte uploads
    blijven op het toestel en zijn opnieuw te versturen.
 

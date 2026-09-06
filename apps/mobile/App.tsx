@@ -482,7 +482,7 @@ function Recorder({ session }: { session: Session }) {
     <View style={[styles.center, { padding: 28 }]}>
       <View style={styles.recRing}><View style={styles.recCore} /></View>
       <Text style={styles.timer}>{mm}:{ss}</Text>
-      <Text style={styles.recHint}>Opname loopt — ook met het scherm uit.{'\n'}{TYPE_LABELS[recType]}</Text>
+      <Text style={styles.recHint}>Opname loopt. Houd het scherm aan tijdens de opname.{'\n'}{TYPE_LABELS[recType]}</Text>
       <Pressable style={[styles.primary, styles.stop]} onPress={stopAndUpload}>
         <Text style={styles.primaryText}>Stop &amp; verstuur</Text>
       </Pressable>
