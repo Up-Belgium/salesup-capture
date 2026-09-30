@@ -280,19 +280,24 @@ Deno.serve(async (req) => {
         // opname die al in de pipeline zit niet terugzetten naar 'uploaded'
         // (dat zou opnieuw transcriberen + een tweede mail geven). Vanuit 'error'
         // mag het wél (bv. alsnog verstuurd na de sweep-pending-uploads-grens).
-        if (!['pending_upload', 'error'].includes(rec.status)) {
-          console.log(`ingest: complete ${body.recording_id} genegeerd (status ${rec.status}, via ${caller.kind})`)
-          return json({ ok: true, already: true })
-        }
+        // Enkel de statuswissel wordt bewaakt; eindtijd/duur/consent worden altijd
+        // vastgelegd (anders zou een onverwachte status ook de consent overslaan).
+        const already = !['pending_upload', 'error'].includes(rec.status)
+        if (already) console.log(`ingest: complete ${body.recording_id} — status ${rec.status} blijft (via ${caller.kind})`)
 
-        const patch: any = { status: 'uploaded', error: null }
+        const patch: any = already ? {} : { status: 'uploaded', error: null }
         if (body.ended_at)         patch.ended_at = body.ended_at
         if (body.duration_seconds) patch.duration_seconds = body.duration_seconds
         if (body.consent_status)   patch.consent_status = body.consent_status
-        const { error } = await sb.from('recordings').update(patch).eq('id', body.recording_id)
-        if (error) throw new Error(error.message)
+        if (Object.keys(patch).length) {
+          const { error } = await sb.from('recordings').update(patch).eq('id', body.recording_id)
+          if (error) throw new Error(error.message)
+        }
 
-        if (body.consent_status && body.consent_method) {
+        // Geen dubbele consent-rij bij een herhaalde complete.
+        const { count: consentCount } = await sb.from('consents')
+          .select('id', { count: 'exact', head: true }).eq('recording_id', body.recording_id)
+        if (body.consent_status && body.consent_method && !consentCount) {
           await sb.from('consents').insert({
             recording_id: body.recording_id,
             method:       body.consent_method,
