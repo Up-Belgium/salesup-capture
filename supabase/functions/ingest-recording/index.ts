@@ -9,9 +9,18 @@
 //   3. Integratie-secret (Recall-webhook, server-to-server): X-Capture-Secret
 //      → mag alles, incl. action 'transcript'.
 //
-// Acties: context | start | complete | transcript
+// Acties: context | start | append | reupload | complete | transcript
+//         match_orphans (mobiele app: lokale bestanden koppelen aan opnames)
 //         recall_start (sdk_upload aanmaken) | recall_transcript (realtime-
 //         transcript uit de Recall Desktop SDK, alleen eigen-org-opnames)
+//
+// Idempotentie (duurzame upload-wachtrij in de mobiele app, fix/durable-upload):
+//   - start met client_ref  → zelfde client_ref = zelfde opname (geen dubbele rij
+//     als het antwoord onderweg verloren ging); opgeslagen als external_ref 'app:<ref>'.
+//   - append met segment_no → bestaand segmentpad hergebruiken bij een retry.
+//   - reupload              → verse signed upload-URL (upsert) voor een bestaand pad.
+//   - complete              → wijzigt de status enkel vanuit pending_upload/error,
+//     zodat een herhaalde complete een getranscribeerde opname niet terugzet.
 // Secrets: CAPTURE_INGEST_SECRET (pad 3) · RECALL_API_KEY + RECALL_API_URL
 //          (alleen voor recall_start; URL default us-west-2)
 // ============================================================================
@@ -108,7 +117,30 @@ Deno.serve(async (req) => {
         if (!orgAllowed(orgId)) return json({ ok: false, error: 'geen toegang tot deze organisatie' }, 403)
         const memberId = body.member_id ?? caller.memberByOrg?.[orgId] ?? null
 
+        // Optionele client_ref (lokale id uit de upload-wachtrij van de app): als
+        // er al een opname met dezelfde ref bestaat (vorige poging kreeg geen
+        // antwoord), geven we DIE terug met een verse upsert-URL i.p.v. een
+        // tweede rij aan te maken die anders eeuwig op pending_upload blijft.
+        const clientRef = typeof body.client_ref === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(body.client_ref)
+          ? `app:${body.client_ref}` : null
         const ext = EXT_OK.includes(String(body.ext)) ? body.ext : 'm4a'
+        if (clientRef) {
+          const { data: existing } = await sb.from('recordings')
+            .select('id, org_id, storage_path').eq('external_ref', clientRef).eq('org_id', orgId)
+            .order('created_at', { ascending: true }).limit(1).maybeSingle()
+          if (existing) {
+            const path = existing.storage_path ?? `${orgId}/${existing.id}.${ext}`
+            const { data: up, error: upErr } = await sb.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: true })
+            if (upErr) throw new Error(upErr.message)
+            if (!existing.storage_path) await sb.from('recordings').update({ storage_path: path }).eq('id', existing.id)
+            console.log(`ingest: start (herhaald, client_ref) ${existing.id} (via ${caller.kind})`)
+            return json({
+              ok: true, recording_id: existing.id, storage_path: path,
+              upload_url: up.signedUrl, token: up.token, reused: true,
+            })
+          }
+        }
+
         const { data: rec, error } = await sb.from('recordings').insert({
           org_id:           orgId,
           member_id:        memberId,
@@ -117,6 +149,7 @@ Deno.serve(async (req) => {
           meeting_platform: body.meeting_platform ?? null,
           title:            body.title ?? null,
           started_at:       body.started_at,
+          external_ref:     clientRef,
         }).select('id').single()
         if (error) throw new Error(error.message)
 
@@ -141,8 +174,22 @@ Deno.serve(async (req) => {
         if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
         if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
 
+        // Idempotente retry: de app stuurt segment_no mee (1 = eerste extra
+        // segment). Bestaat dat segment al (vorige poging kreeg geen antwoord of
+        // de upload faalde), dan hergebruiken we het pad met een upsert-URL i.p.v.
+        // een nieuw (leeg) pad toe te voegen dat de transcriptie zou breken.
+        const existingPaths: string[] = rec.segment_paths ?? []
+        const segNo = Number(body.segment_no)
+        if (Number.isInteger(segNo) && segNo >= 1 && segNo <= existingPaths.length) {
+          const reusePath = existingPaths[segNo - 1]
+          const { data: up, error: upErr } = await sb.storage.from(BUCKET).createSignedUploadUrl(reusePath, { upsert: true })
+          if (upErr) throw new Error(upErr.message)
+          console.log(`ingest: append seg ${segNo} (herhaald) → ${rec.id} (via ${caller.kind})`)
+          return json({ ok: true, recording_id: rec.id, storage_path: reusePath, upload_url: up.signedUrl, token: up.token, reused: true })
+        }
+
         const ext = EXT_OK.includes(String(body.ext)) ? body.ext : 'm4a'
-        const segNr = (rec.segment_paths?.length ?? 0) + 1
+        const segNr = existingPaths.length + 1
         const seg_path = `${rec.org_id}/${rec.id}/seg-${segNr}.${ext}`
         const { data: up, error: upErr } = await sb.storage.from(BUCKET).createSignedUploadUrl(seg_path)
         if (upErr) throw new Error(upErr.message)
@@ -154,14 +201,91 @@ Deno.serve(async (req) => {
         return json({ ok: true, recording_id: rec.id, storage_path: seg_path, upload_url: up.signedUrl, token: up.token })
       }
 
+      case 'reupload': {
+        // Verse signed upload-URL (upsert) voor een BESTAAND pad van een opname:
+        // het hoofdbestand (storage_path) of een extra segment (segment_paths).
+        // Gebruikt door de upload-wachtrij van de app als een eerdere PUT mislukte
+        // — zo komt het bestand alsnog op exact het pad waar transcriptie het zoekt.
+        if (!body.recording_id) return json({ ok: false, error: 'recording_id verplicht' }, 400)
+        const { data: rec } = await sb.from('recordings')
+          .select('id, org_id, status, storage_path, segment_paths').eq('id', body.recording_id).maybeSingle()
+        if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
+        if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
+        if (!['pending_upload', 'error'].includes(rec.status)) {
+          return json({ ok: false, error: `opname is al verwerkt (status ${rec.status})` }, 409)
+        }
+        const path = body.storage_path ? String(body.storage_path) : rec.storage_path
+        if (!path) return json({ ok: false, error: 'opname heeft geen storage_path' }, 400)
+        if (path !== rec.storage_path && !(rec.segment_paths ?? []).includes(path)) {
+          return json({ ok: false, error: 'storage_path hoort niet bij deze opname' }, 400)
+        }
+        const { data: up, error: upErr } = await sb.storage.from(BUCKET).createSignedUploadUrl(path, { upsert: true })
+        if (upErr) throw new Error(upErr.message)
+        console.log(`ingest: reupload ${rec.id} → ${path} (via ${caller.kind})`)
+        return json({ ok: true, recording_id: rec.id, storage_path: path, upload_url: up.signedUrl, token: up.token })
+      }
+
+      case 'match_orphans': {
+        // De app vond lokale audiobestanden die niet in haar wachtrij staan (bv.
+        // een mislukte upload uit een oudere app-versie). Oude versies riepen
+        // 'start' aan meteen NA het stoppen van de opname, dus created_at van de
+        // opname ≈ wijzigingstijd van het bestand. Per bestand geven we de best
+        // passende eigen opname terug (binnen 15 min) + of het bestand al in
+        // storage staat, zodat de app weet: redden (reupload), al verstuurd
+        // (verbergen) of onbekend (als nieuwe opname aanbieden).
+        if (caller.kind !== 'user') return json({ ok: false, error: 'match_orphans is alleen voor ingelogde gebruikers' }, 403)
+        const files: any[] = Array.isArray(body.files) ? body.files.slice(0, 50) : []
+        const memberIds = Object.values(caller.memberByOrg ?? {})
+        const times = files.map((f) => new Date(f?.modified_at).getTime()).filter((t) => isFinite(t))
+        if (files.length === 0 || times.length === 0 || memberIds.length === 0) return json({ ok: true, matches: [] })
+        const WINDOW_MS = 15 * 60_000
+        const { data: recs } = await sb.from('recordings')
+          .select('id, org_id, status, storage_path, created_at, started_at, title, recording_type')
+          // enkel opnames met een lokaal bestand (geen Recall-bots/SDK-opnames)
+          .in('member_id', memberIds).or('external_ref.is.null,external_ref.like.app:%')
+          .gte('created_at', new Date(Math.min(...times) - WINDOW_MS).toISOString())
+          .lte('created_at', new Date(Math.max(...times) + WINDOW_MS).toISOString())
+          .limit(500)
+        const matches = []
+        for (const f of files) {
+          const t = new Date(f?.modified_at).getTime()
+          let best: any = null, bestDiff = Infinity
+          for (const r of recs ?? []) {
+            const diff = Math.abs(new Date(r.created_at).getTime() - t)
+            if (diff <= WINDOW_MS && diff < bestDiff) { best = r; bestDiff = diff }
+          }
+          if (!best) { matches.push({ key: String(f?.key ?? ''), match: null }); continue }
+          const hasFile = best.storage_path ? await objectExists(sb, best.storage_path) : false
+          matches.push({
+            key: String(f?.key ?? ''),
+            match: {
+              recording_id: best.id, org_id: best.org_id, status: best.status, has_file: hasFile,
+              storage_path: best.storage_path, started_at: best.started_at,
+              title: best.title, recording_type: best.recording_type,
+            },
+          })
+        }
+        console.log(`ingest: match_orphans ${files.length} bestand(en), ${matches.filter((m) => m.match).length} gekoppeld`)
+        return json({ ok: true, matches })
+      }
+
       case 'complete': {
         if (!body.recording_id) return json({ ok: false, error: 'recording_id verplicht' }, 400)
         const { data: rec } = await sb.from('recordings')
-          .select('id, org_id').eq('id', body.recording_id).maybeSingle()
+          .select('id, org_id, status').eq('id', body.recording_id).maybeSingle()
         if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
         if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
 
-        const patch: any = { status: 'uploaded' }
+        // Idempotent: een herhaalde complete (antwoord onderweg verloren) mag een
+        // opname die al in de pipeline zit niet terugzetten naar 'uploaded'
+        // (dat zou opnieuw transcriberen + een tweede mail geven). Vanuit 'error'
+        // mag het wél (bv. alsnog verstuurd na de sweep-pending-uploads-grens).
+        if (!['pending_upload', 'error'].includes(rec.status)) {
+          console.log(`ingest: complete ${body.recording_id} genegeerd (status ${rec.status}, via ${caller.kind})`)
+          return json({ ok: true, already: true })
+        }
+
+        const patch: any = { status: 'uploaded', error: null }
         if (body.ended_at)         patch.ended_at = body.ended_at
         if (body.duration_seconds) patch.duration_seconds = body.duration_seconds
         if (body.consent_status)   patch.consent_status = body.consent_status
@@ -297,7 +421,9 @@ Deno.serve(async (req) => {
           .select('id, org_id, external_ref').eq('id', body.recording_id).maybeSingle()
         if (!rec) return json({ ok: false, error: 'opname niet gevonden' }, 404)
         if (!orgAllowed(rec.org_id)) return json({ ok: false, error: 'geen toegang' }, 403)
-        if (!rec.external_ref) return json({ ok: false, error: 'geen Recall-opname (external_ref ontbreekt)' }, 400)
+        if (!rec.external_ref || String(rec.external_ref).startsWith('app:')) {
+          return json({ ok: false, error: 'geen Recall-opname (external_ref ontbreekt)' }, 400)
+        }
 
         const segments = body.segments
           .map((s: any) => ({
@@ -339,13 +465,24 @@ Deno.serve(async (req) => {
       }
 
       default:
-        return json({ ok: false, error: "action moet 'context', 'start', 'complete' of 'transcript' zijn" }, 400)
+        return json({ ok: false, error: "action moet 'context', 'start', 'append', 'reupload', 'complete', 'match_orphans' of 'transcript' zijn" }, 400)
     }
   } catch (e) {
     console.error(`ingest-recording: ${e}`)
     return json({ ok: false, error: String(e).slice(0, 500) }, 500)
   }
 })
+
+// Bestaat er een object op dit pad in de recordings-bucket? (storage list op de
+// map + exacte naamvergelijking; search is een deel-match.)
+async function objectExists(sb: any, path: string): Promise<boolean> {
+  const i = path.lastIndexOf('/')
+  const dir = i >= 0 ? path.slice(0, i) : ''
+  const name = i >= 0 ? path.slice(i + 1) : path
+  const { data, error } = await sb.storage.from(BUCKET).list(dir, { search: name, limit: 10 })
+  if (error) throw new Error(`storage list: ${error.message}`)
+  return (data ?? []).some((o: any) => o?.name === name && o?.id)
+}
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {

@@ -31,6 +31,7 @@ supabase/
   functions/transcribe-recordings   Deepgram, cron */10
   functions/summarize-email    Claude + Resend, cron 5-55/10
   functions/bridge-to-training doorzet naar trainingsproject, cron :25
+  functions/sweep-pending-uploads  mail bij nooit aangekomen app-opname, cron :40 (migratie 006)
   cron/setup_vault_secret.sql  niet meer nodig (crons draaien via anon-JWT); referentie
   seed_first_org.sql           eenmalig: eerste organisatie + owner (salesUp = gedaan)
 apps/
