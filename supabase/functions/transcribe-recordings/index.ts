@@ -25,7 +25,9 @@ function cronForbidden(req: Request): Response | null {
 const BUCKET = 'recordings'
 // nova-3 + language=multi: NL/FR/EN code-switching, met smart_format + diarize
 // voor leesbare, per-spreker segmenten (gelijk aan de live-config).
-const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&diarize=true&language=multi'
+// EU-endpoint (verwerking binnen de EU, geen fallback) + mip_opt_out=true (geen
+// bewaring bij Deepgram voor modelverbetering). GDPR — subverwerkersoverzicht okt 2026.
+const DEEPGRAM_URL = 'https://api.eu.deepgram.com/v1/listen?model=nova-3&smart_format=true&diarize=true&language=multi&mip_opt_out=true'
 
 interface Segment { speaker: string | null; start_s: number | null; end_s: number | null; text: string }
 

@@ -331,6 +331,8 @@ Deno.serve(async (req) => {
               // Recall's eigen transcriptie: geen externe provider-credentials
               // nodig; accuracy-modus + auto-taal (Nederlands wordt herkend).
               transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+              // GDPR: zonder instelling bewaart Recall media onbeperkt → 72u.
+              retention: { type: 'timed', hours: 72 },
               realtime_endpoints: [{
                 type: 'desktop_sdk_callback',
                 events: ['transcript.data', 'participant_events.join'],
@@ -387,6 +389,9 @@ Deno.serve(async (req) => {
             ...(body.join_at ? { join_at: body.join_at } : {}),
             recording_config: {
               transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
+              // GDPR: zonder instelling bewaart Recall media onbeperkt. poll-bots
+              // haalt het transcript binnen 24u op → media na 72u gewist.
+              retention: { type: 'timed', hours: 72 },
             },
           }),
         })

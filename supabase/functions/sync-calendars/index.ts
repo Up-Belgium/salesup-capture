@@ -9,6 +9,12 @@
 // Transcript komt daarna binnen via poll-bots. Cron: elke 5 minuten.
 //
 // Dedupe: recordings.calendar_event_uid = Recall calendar-event-id.
+// Annulatie: is een agenda-event verwijderd (ev.is_deleted) én is de bijhorende
+// opname nog niet gestart (pending_upload, geen storage_path), dan zetten we die
+// op 'cancelled' (verdwijnt uit de opnamelijst) en annuleren we de bot. Reeds
+// opgenomen/getranscribeerde meetings blijven onaangeroerd. Verschuift een
+// meeting (nieuwe start_time) dan werken we started_at bij; wordt een eerder
+// geannuleerd event terug actief, dan plannen we opnieuw.
 // Secrets: RECALL_API_KEY (+ RECALL_API_URL, default eu-central-1)
 // ============================================================================
 
@@ -28,6 +34,14 @@ function cronForbidden(req: Request): Response | null {
 // recordings.calendar_event_uid voorkomt dubbele bots.
 const WINDOW_BEFORE_MIN = 120        // ook lopende meetings (tot 2u geleden gestart)
 const WINDOW_AHEAD_MIN = 24 * 60     // alle meetings tot 24u vooruit
+// Bot mag tot 60 min in de wachtruimte staan (Recall-default is 20 min).
+// Extern gehoste meetings laten de bot vaak pas laat of niet meteen toe —
+// dit was dé hoofdoorzaak van gemiste opnames (timeout_exceeded_waiting_room).
+const WAITING_ROOM_TIMEOUT_S = 3600
+// GDPR: Recall bewaart opnames (audio/video/transcript) zonder instelling ONBEPERKT
+// (accounts na 12/6/2025). poll-bots haalt het transcript binnen 24u na de start
+// op; daarna heeft Recall de media niet meer nodig → na 72u automatisch gewist.
+const RECALL_RETENTION_HOURS = 72
 
 function platformOf(url: string): string {
   return /meet\.google/.test(url) ? 'google_meet'
@@ -36,12 +50,13 @@ function platformOf(url: string): string {
        : /webex\./.test(url) ? 'webex' : 'other'
 }
 
-// Klantgesprek? = minstens één ZAKELIJKE externe deelnemer (buiten het eigen
-// domein én niet op een vrije-mail-domein). Zo slaan we over: interne meetings
-// (alle deelnemers binnen eigen domein), persoonlijke agenda-items zonder
-// deelnemers, én persoonlijke afspraken met een privé-gmail/hotmail-deelnemer
-// (bv. "kind halen in de crèche"). Werkt voor Google (attendees[].email) en
-// Microsoft (attendees[].emailAddress.address).
+// Klantgesprek? = een ZAKELIJKE externe partij is betrokken — ofwel als
+// deelnemer, ofwel als ORGANISATOR. De organisator-check is cruciaal voor
+// extern-georganiseerde meetings: Google deelt dan de gastenlijst vaak niet met
+// genodigden, waardoor attendees leeg of enkel het eigen domein lijkt. Zo slaan
+// we nog steeds over: interne meetings (alle deelnemers + organisator binnen
+// eigen domein), persoonlijke agenda-items zonder externe partij, en
+// persoonlijke afspraken met enkel een vrije-mail-domein (gmail/hotmail/...).
 const FREE_MAIL_DOMAINS = new Set([
   'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.be', 'hotmail.fr', 'hotmail.nl',
   'outlook.com', 'outlook.be', 'outlook.fr', 'live.com', 'live.be', 'live.nl',
@@ -49,6 +64,18 @@ const FREE_MAIL_DOMAINS = new Set([
   'msn.com', 'aol.com', 'gmx.com', 'gmx.net', 'protonmail.com', 'proton.me',
   'telenet.be', 'skynet.be', 'proximus.be', 'scarlet.be', 'pandora.be',
 ])
+// Agenda-systeemadressen (vergaderzalen, gedeelde agenda's) zijn geen echte
+// externe partij — negeren.
+function isSystemAddress(email: string): boolean {
+  return email.endsWith('resource.calendar.google.com') || email.endsWith('group.calendar.google.com') || email.endsWith('calendar.google.com')
+}
+function businessDomainExternal(email: string | null, ownDomain: string | null): boolean {
+  if (!email || !email.includes('@')) return false
+  if (isSystemAddress(email)) return false
+  const d = email.split('@')[1]
+  if (!d) return false
+  return d !== ownDomain && !FREE_MAIL_DOMAINS.has(d)
+}
 function attendeeEmails(ev: any): string[] {
   const raw = ev?.raw ?? {}
   const list = Array.isArray(raw.attendees) ? raw.attendees : []
@@ -60,11 +87,22 @@ function attendeeEmails(ev: any): string[] {
   }
   return out
 }
+// Organisator/aanmaker van het event (Google: organizer.email / creator.email,
+// Microsoft: organizer.emailAddress.address).
+function organizerEmail(ev: any): string | null {
+  const raw = ev?.raw ?? {}
+  const e = (raw.organizer?.email ?? raw.organizer?.emailAddress?.address ?? raw.creator?.email ?? '')
+    .toString().toLowerCase().trim()
+  return e && e.includes('@') ? e : null
+}
 function isExternalMeeting(ev: any, ownDomain: string | null): boolean {
-  const domains = attendeeEmails(ev).map((e) => e.split('@')[1]).filter(Boolean)
-  if (domains.length === 0) return false            // geen deelnemers → persoonlijk/intern → geen bot
-  // ≥1 zakelijke externe deelnemer (niet eigen domein, niet vrije-mail)
-  return domains.some((d) => d !== ownDomain && !FREE_MAIL_DOMAINS.has(d))
+  // 1. Organisator is een zakelijke externe partij? → klantgesprek, ook al is de
+  //    gastenlijst verborgen (typisch bij extern-georganiseerde meetings).
+  if (businessDomainExternal(organizerEmail(ev), ownDomain)) return true
+  // 2. Anders: minstens één zakelijke externe DEELNEMER.
+  const emails = attendeeEmails(ev)
+  if (emails.length === 0) return false              // geen deelnemers én geen externe organisator → persoonlijk/intern
+  return emails.some((e) => businessDomainExternal(e, ownDomain))
 }
 
 // Fysieke locatie? = een echt adres in het event, geen (video)link. Google geeft
@@ -101,6 +139,41 @@ async function loadCover(): Promise<string | null> {
   } catch { return null }
 }
 
+// Statussen waarin een opname nog NIET is vastgelegd — enkel die mogen we bij
+// annulatie/verschuiving nog aanraken. uploaded/transcribing/transcribed/error
+// betekenen dat de meeting effectief plaatsvond → nooit overschrijven.
+const NOT_YET_RECORDED = new Set(['pending_upload'])
+
+// Plant (of herplant) de Recall-bot voor een event. Gooit bij een niet-OK-status.
+async function scheduleBot(recallUrl: string, recallHeaders: Record<string, string>, evId: string, coverB64: string | null): Promise<void> {
+  const botRes = await fetch(`${recallUrl}/api/v2/calendar-events/${evId}/bot/`, {
+    method: 'POST',
+    headers: recallHeaders,
+    body: JSON.stringify({
+      deduplication_key: `salesup-${evId}`,
+      bot_config: {
+        bot_name: 'salesUp Capture',
+        // Wachtruimte-tolerantie omhoog (default 20 min → 60 min): dé
+        // hoofdoorzaak van gemiste opnames bij extern gehoste meetings.
+        automatic_leave: { waiting_room_timeout: WAITING_ROOM_TIMEOUT_S },
+        ...(coverB64 ? { automatic_video_output: { in_call_recording: { kind: 'jpeg', b64_data: coverB64 } } } : {}),
+        recording_config: {
+          // Deepgram nova-3 met language:'multi' → echte code-switching over o.a.
+          // NL én FR in één meeting (Recall's eigen ASR fragmenteerde de niet-
+          // dominante taal). Vereist een gekoppelde Deepgram-key in Recall.
+          // mip_opt_out: Deepgram bewaart de audio niet voor modelverbetering.
+          // (EU-verwerking bij Deepgram = host api.eu.deepgram.com in de
+          // Deepgram-instelling van het Recall-dashboard.)
+          transcript: { provider: { deepgram_streaming: { model: 'nova-3', language: 'multi', mip_opt_out: true } } },
+          retention: { type: 'timed', hours: RECALL_RETENTION_HOURS },
+        },
+      },
+    }),
+  })
+  if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
+  await botRes.json().catch(() => ({}))
+}
+
 Deno.serve(async (req) => {
   const denied = cronForbidden(req); if (denied) return denied
   const recallKey = (Deno.env.get('RECALL_API_KEY') ?? '').trim()
@@ -119,12 +192,13 @@ Deno.serve(async (req) => {
   try { dbg = (await req.clone().json())?.debug ? true : null } catch { /* */ }
 
   // Diagnose-modus: privacyveilig (geen titels/inhoud) — toont of events met
-  // videocall-link binnenkomen en onder welk veld de link zit.
+  // videocall-link binnenkomen, hoe ze geclassificeerd worden en geplande bots.
   if (dbg) {
     const out: any[] = []
     const gte = new Date(Date.now() - 12 * 3600_000).toISOString()
     const lte = new Date(Date.now() + 24 * 3600_000).toISOString()
     for (const m of membersList ?? []) {
+      const ownDomain = String(m.calendar_email ?? m.email ?? '').toLowerCase().split('@')[1] ?? null
       const r = await fetch(`${recallUrl}/api/v2/calendar-events/?calendar_id=${m.recall_calendar_id}&start_time__gte=${gte}&start_time__lte=${lte}`, { headers: recallHeaders })
       const j = await r.json().catch(() => ({}))
       const evs = Array.isArray(j?.results) ? j.results : (Array.isArray(j) ? j : [])
@@ -133,10 +207,13 @@ Deno.serve(async (req) => {
         http: r.status, event_count: evs.length,
         events: evs.slice(0, 12).map((e: any) => ({
           start_time: e?.start_time,
+          is_deleted: !!e?.is_deleted,
           has_meeting_url: !!(e?.meeting_url ?? e?.meeting_platform_url),
           location: eventLocation(e),
           in_person: isInPerson(e),
-          bots: e?.bots ?? null,  // toont de echte structuur van geplande bots
+          external: isExternalMeeting(e, ownDomain),
+          organizer_external: businessDomainExternal(organizerEmail(e), ownDomain),
+          bots: e?.bots ?? null,
         })),
       })
     }
@@ -148,7 +225,7 @@ Deno.serve(async (req) => {
   const lte = new Date(now + WINDOW_AHEAD_MIN * 60_000).toISOString()
   const coverB64 = await loadCover()
 
-  let scheduled = 0, skipped = 0, errors = 0, internal = 0, inPerson = 0
+  let scheduled = 0, skipped = 0, errors = 0, internal = 0, inPerson = 0, cancelled = 0, rescheduled = 0, reactivated = 0
   let lastErrorCode: string | null = null  // generieke hint (bv. 402 credit) zonder details te lekken
   for (const m of membersList ?? []) {
     try {
@@ -164,7 +241,31 @@ Deno.serve(async (req) => {
       for (const ev of events) {
         // Per-event afgeschermd: één mislukt event mag de rest niet blokkeren.
         try {
-          if (ev?.is_deleted) continue
+          // Bestaande opname voor dit agenda-event (indien al gepland).
+          const { data: existing } = await sb.from('recordings')
+            .select('id, status, storage_path, started_at')
+            .eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
+
+          // --- Annulatie: event verwijderd in agenda ---
+          if (ev?.is_deleted) {
+            // Enkel een nog-niet-opgenomen opname verbergen; reeds opgenomen
+            // meetings (uploaded/transcribing/transcribed/error) blijven staan.
+            if (existing && !existing.storage_path && NOT_YET_RECORDED.has(existing.status)) {
+              // Bot best-effort annuleren (Recall ruimt bij event-delete meestal
+              // zelf op; DELETE is enkel een vangnet).
+              await fetch(`${recallUrl}/api/v2/calendar-events/${ev.id}/bot/`, { method: 'DELETE', headers: recallHeaders }).catch(() => {})
+              await sb.from('recordings').update({
+                status: 'cancelled',
+                cancelled_at: new Date().toISOString(),
+                error: 'Meeting geannuleerd in agenda',
+                updated_at: new Date().toISOString(),
+              }).eq('id', existing.id)
+              cancelled++
+              console.log(`sync-calendars: opname geannuleerd voor event ${ev.id} (${m.full_name})`)
+            }
+            continue
+          }
+
           const meetingUrl: string | null = ev?.meeting_url ?? ev?.meeting_platform_url ?? null
           if (!meetingUrl || !meetingUrl.startsWith('http')) continue
           // Al afgelopen meetings overslaan — daar kan geen bot meer voor joinen.
@@ -173,29 +274,45 @@ Deno.serve(async (req) => {
           // Fysieke afspraak (echt adres) → geen bot, ook al hangt er een Meet-link aan;
           // notify-meetings stuurt hiervoor een opname-herinnering naar de telefoon.
           if (isInPerson(ev)) { inPerson++; continue }
-          // Interne meetings (alle deelnemers binnen eigen domein) overslaan.
+          // Geen zakelijke externe partij (deelnemer óf organisator) → intern/persoonlijk → overslaan.
           if (!isExternalMeeting(ev, ownDomain)) { internal++; continue }
 
-          const { data: existing } = await sb.from('recordings')
-            .select('id').eq('member_id', m.id).eq('calendar_event_uid', ev.id).maybeSingle()
-          if (existing) { skipped++; continue }
+          // --- Reactivatie: eerder geannuleerd, maar event staat weer actief ---
+          if (existing && existing.status === 'cancelled') {
+            await scheduleBot(recallUrl, recallHeaders, ev.id, coverB64)
+            await sb.from('recordings').update({
+              status: 'pending_upload',
+              cancelled_at: null,
+              error: null,
+              started_at: ev?.start_time ?? existing.started_at,
+              updated_at: new Date().toISOString(),
+            }).eq('id', existing.id)
+            reactivated++
+            console.log(`sync-calendars: opname heropend voor event ${ev.id} (${m.full_name})`)
+            continue
+          }
 
-          const botRes = await fetch(`${recallUrl}/api/v2/calendar-events/${ev.id}/bot/`, {
-            method: 'POST',
-            headers: recallHeaders,
-            body: JSON.stringify({
-              deduplication_key: `salesup-${ev.id}`,
-              bot_config: {
-                bot_name: 'salesUp Capture',
-                ...(coverB64 ? { automatic_video_output: { in_call_recording: { kind: 'jpeg', b64_data: coverB64 } } } : {}),
-                recording_config: {
-                  transcript: { provider: { recallai_streaming: { mode: 'prioritize_accuracy', language_code: 'auto' } } },
-                },
-              },
-            }),
-          })
-          if (!botRes.ok) throw new Error(`schedule-bot ${botRes.status}: ${(await botRes.text()).slice(0, 150)}`)
-          await botRes.json().catch(() => ({}))
+          if (existing) {
+            // Verschuiving: starttijd gewijzigd → started_at bijwerken (enkel als
+            // de opname nog niet is vastgelegd). Bot volgt het event vanzelf.
+            // Vergelijk op tijdstip (epoch), niet op tekst: de DB bewaart
+            // timestamptz ("...+00") terwijl Recall ISO ("...Z") stuurt — een
+            // string-vergelijking zou élke run een nutteloze update triggeren.
+            const evStartMs = ev?.start_time ? new Date(ev.start_time).getTime() : NaN
+            const curStartMs = existing.started_at ? new Date(existing.started_at).getTime() : NaN
+            if (!existing.storage_path && NOT_YET_RECORDED.has(existing.status) &&
+                Number.isFinite(evStartMs) && Number.isFinite(curStartMs) &&
+                Math.abs(evStartMs - curStartMs) > 60_000) {
+              await sb.from('recordings').update({
+                started_at: ev.start_time,
+                updated_at: new Date().toISOString(),
+              }).eq('id', existing.id)
+              rescheduled++
+            }
+            skipped++; continue
+          }
+
+          await scheduleBot(recallUrl, recallHeaders, ev.id, coverB64)
 
           const { data: rec, error } = await sb.from('recordings').insert({
             org_id:             m.org_id,
@@ -230,7 +347,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} intern=${internal} fysiek=${inPerson} fouten=${errors}`)
+  console.log(`sync-calendars: leden=${(membersList ?? []).length} gepland=${scheduled} dedupe=${skipped} geannuleerd=${cancelled} verschoven=${rescheduled} heropend=${reactivated} intern=${internal} fysiek=${inPerson} fouten=${errors}`)
 
   // Krediet-alarm: bij Recall 402 (insufficient_credit) vielen meetings vroeger
   // STILLETJES weg (de cron leest niemand). We mailen nu de owner(s) zodat dit
@@ -239,7 +356,7 @@ Deno.serve(async (req) => {
     try { await alertOwners(sb) } catch (e) { console.error(`sync-calendars: krediet-alarm faalde: ${e}`) }
   }
 
-  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, internal, in_person: inPerson, errors, hint: lastErrorCode })
+  return json({ ok: true, members: (membersList ?? []).length, scheduled, skipped, cancelled, rescheduled, reactivated, internal, in_person: inPerson, errors, hint: lastErrorCode })
 })
 
 // Mailt actieve owners dat het Recall-krediet op is. Graceful skip zonder
