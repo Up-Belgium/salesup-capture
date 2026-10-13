@@ -100,6 +100,11 @@ function dominantLanguage(data: any): string | null {
   return best
 }
 
+function lastStatusCode(bot: any): string {
+  const changes = Array.isArray(bot?.status_changes) ? bot.status_changes : []
+  return changes.length ? String(changes[changes.length - 1]?.code ?? '') : ''
+}
+
 function firstRecordingId(bot: any): string | null {
   const recs = Array.isArray(bot?.recordings) ? bot.recordings : []
   for (const r of recs) if (typeof r?.id === 'string' && r.id) return r.id
@@ -152,6 +157,43 @@ Deno.serve(async (req) => {
       return match?.bot_id ?? match?.id ?? null
     }
     return null
+  }
+
+  // Wachtruimte-melding: push naar de telefoon (Expo) als het lid de app met
+  // pushmeldingen heeft, anders een korte mail. Max. één keer per opname
+  // (waiting_room_notified_at). Faalt stil: mag de transcript-flow nooit breken.
+  async function notifyWaitingRoom(rec: any) {
+    try {
+      await sb.from('recordings').update({ waiting_room_notified_at: new Date().toISOString() }).eq('id', rec.id)
+      if (!rec.member_id) return
+      const { data: m } = await sb.from('members').select('email, expo_push_token').eq('id', rec.member_id).maybeSingle()
+      const title = (rec.title ?? 'je meeting').toString().slice(0, 80)
+      const msg = `De opnamebot "salesUp Capture" staat in de wachtruimte van "${title}". Laat hem toe, anders wordt het gesprek niet opgenomen.`
+      if (m?.expo_push_token) {
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            to: m.expo_push_token, title: '⏳ Bot in de wachtruimte', body: msg,
+            sound: 'default', priority: 'high', channelId: 'meetings', data: { type: 'waiting_room' },
+          }),
+        })
+        console.log(`poll-bots: wachtruimte-push voor ${rec.id}`)
+        return
+      }
+      const resendKey = (Deno.env.get('RESEND_API_KEY') ?? '').trim()
+      if (resendKey && m?.email) {
+        const from = (Deno.env.get('CAPTURE_EMAIL_FROM') ?? 'salesUp Capture <capture@salesup.be>').trim()
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from, to: [m.email], subject: '⏳ Laat de opnamebot toe in je meeting', text: msg }),
+        })
+        console.log(`poll-bots: wachtruimte-mail voor ${rec.id}`)
+      }
+    } catch (e) {
+      console.error(`poll-bots: wachtruimte-melding faalde voor ${rec.id}: ${e}`)
+    }
   }
 
   // Async transcriptie aanvragen op een Recall-recording. Geeft het job-id terug.
@@ -221,6 +263,12 @@ Deno.serve(async (req) => {
     if (!res.ok) throw new Error(`Recall ${res.status}: ${(await res.text()).slice(0, 200)}`)
     const bot = await res.json()
 
+    // Bot staat in de wachtruimte → gebruiker één keer verwittigen om hem toe te
+    // laten (hoofdoorzaak van gemiste opnames: niemand laat de bot binnen).
+    if (lastStatusCode(bot) === 'in_waiting_room' && !rec.waiting_room_notified_at) {
+      await notifyWaitingRoom(rec)
+    }
+
     // ── Fase 2: async job loopt al → status pollen ────────────────────────
     if (rec.recall_async_transcript_id) {
       const { status, url } = await getTranscript(rec.recall_async_transcript_id)
@@ -274,7 +322,7 @@ Deno.serve(async (req) => {
 
   // ── Selectie: normaal (pending_upload) of handmatig één opname ──────────
   let q = sb.from('recordings')
-    .select('id, external_ref, started_at, created_at, recall_async_transcript_id')
+    .select('id, external_ref, started_at, created_at, recall_async_transcript_id, member_id, title, waiting_room_notified_at')
     .or('external_ref.like.bot:%,external_ref.like.calevent:%')
     .order('created_at', { ascending: true })
     .limit(limit)

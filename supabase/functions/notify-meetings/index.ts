@@ -46,9 +46,16 @@ function eventLocation(ev: any): string {
   const raw = ev?.raw ?? {}
   return (typeof raw.location === 'string' ? raw.location : (raw.location?.displayName ?? '')).toString().trim()
 }
+// Label zonder cijfers als "Microsoft Teams-vergadering" = videocall, geen adres
+// (zelfde regel als sync-calendars, anders krijgt een Teams-meeting een F2F-push
+// i.p.v. een bot).
+function isVirtualLabel(loc: string): boolean {
+  return !/\d/.test(loc) && /\b(teams|zoom|google meet|webex|skype|whereby|gotomeeting)\b/i.test(loc)
+}
 function isInPerson(ev: any): boolean {
   const loc = eventLocation(ev)
   if (!loc || /^https?:\/\//i.test(loc) || /(meet\.google|zoom\.|teams\.|webex\.)/i.test(loc)) return false
+  if (isVirtualLabel(loc)) return false
   return true
 }
 

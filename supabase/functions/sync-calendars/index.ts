@@ -114,11 +114,20 @@ function eventLocation(ev: any): string {
   const loc = (typeof raw.location === 'string' ? raw.location : (raw.location?.displayName ?? '')).toString().trim()
   return loc
 }
+// Outlook/Teams vult de locatie automatisch met een label als "Microsoft Teams-
+// vergadering" / "Microsoft Teams Meeting" (Zoom/Meet/Webex idem). Zo'n label
+// zonder cijfers is GEEN adres → videocall, geen fysieke afspraak. Een echt adres
+// bevat (bijna) altijd cijfers (huisnummer/postcode), ook als er een Meet-
+// hardware-zaal bij vermeld staat.
+function isVirtualLabel(loc: string): boolean {
+  return !/\d/.test(loc) && /\b(teams|zoom|google meet|webex|skype|whereby|gotomeeting)\b/i.test(loc)
+}
 function isInPerson(ev: any): boolean {
   const loc = eventLocation(ev)
   if (!loc) return false
   if (/^https?:\/\//i.test(loc)) return false               // locatie is een URL → niet fysiek
   if (/(meet\.google|zoom\.|teams\.|webex\.)/i.test(loc)) return false
+  if (isVirtualLabel(loc)) return false                      // "Microsoft Teams-vergadering" e.d.
   return true
 }
 
