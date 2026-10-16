@@ -2,9 +2,9 @@
 
 *Concept. Vul de `<...>`-velden in, laat nakijken (bij voorkeur juridisch), en publiceer op een publieke URL (bv. https://salesup.be/capture/privacy). Die URL is verplicht voor App Store én Play Store.*
 
-**Laatst bijgewerkt:** `<DATUM>`
-**Verwerkingsverantwoordelijke:** `<JURIDISCHE NAAM salesUp>`, `<ADRES>`, `<ONDERNEMINGSNUMMER>`
-**Contact / privacy-vragen:** `<PRIVACY_EMAIL>`
+**Laatst bijgewerkt:** `9 augustus 2026`
+**Verwerkingsverantwoordelijke:** `BV salesUp`, `Evenbroekveld 14 9420 Erpe-Mere`, `BE0877584635`
+**Contact / privacy-vragen:** `Stig.vh@salesup.be`
 
 ## 1. Wat is salesUp Capture?
 salesUp Capture is een zakelijke tool waarmee een medewerker — **na een expliciete start** — een klantgesprek (fysiek of via videocall) opneemt, zodat de werkgever het gesprek intern kan gebruiken voor **kwaliteitsopvolging en commerciële training**.
@@ -33,16 +33,16 @@ Onder verwerkersovereenkomst, uitsluitend voor bovenstaande doeleinden:
 We **verkopen** je gegevens niet en gebruiken ze **niet voor advertenties of tracking**.
 
 ## 5. Bewaring
-Opnames en afgeleide data worden bewaard zolang nodig voor kwaliteit/training, en daarna verwijderd of geanonimiseerd volgens ons bewaarbeleid (`<BEWAARTERMIJN, bv. 12 maanden>`). Audiobestanden kennen een retentietermijn (`audio_retention_until`).
+Opnames en afgeleide data worden bewaard zolang nodig voor kwaliteit/training, en daarna verwijderd of geanonimiseerd volgens ons bewaarbeleid (12 maanden). Audiobestanden kennen een retentietermijn van 30 dagen.
 
 ## 6. Beveiliging
 Versleuteling tijdens transport (TLS), toegang op basis van rol, opslag in privé-buckets, toegang beperkt tot geautoriseerde gebruikers van dezelfde organisatie.
 
 ## 7. Jouw rechten (AVG/GDPR)
-Recht op inzage, correctie, verwijdering, beperking, bezwaar en overdraagbaarheid. Verzoeken via `<PRIVACY_EMAIL>`; we reageren binnen de wettelijke termijn. Klacht mogelijk bij de Gegevensbeschermingsautoriteit (BE).
+Recht op inzage, correctie, verwijdering, beperking, bezwaar en overdraagbaarheid. Verzoeken via `Stig.vh@salesup.be`; we reageren binnen de wettelijke termijn. Klacht mogelijk bij de Gegevensbeschermingsautoriteit (BE).
 
 ## 8. Gegevens verwijderen
-Vraag verwijdering van je account en data via `<PRIVACY_EMAIL>` of je organisatiebeheerder.
+Vraag verwijdering van je account en data via `stig.vh@salesup.be` of je organisatiebeheerder.
 
 ## 9. Wijzigingen
 We kunnen dit beleid aanpassen; wijzigingen verschijnen op deze pagina met een nieuwe datum.
