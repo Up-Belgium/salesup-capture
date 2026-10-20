@@ -443,15 +443,16 @@ function Recorder({ session }: { session: Session }) {
     if (!org) { Alert.alert('Kies een klant', 'Selecteer onder "Meer opties" voor welke klant je opneemt.'); return; }
     const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microfoon vereist', 'Geef toegang tot de microfoon om op te nemen.'); return; }
-    // shouldPlayInBackground houdt de opname-sessie actief als het scherm
-    // vergrendelt of de app naar de achtergrond gaat (werkt op iOS enkel met
-    // allowsRecording:true + UIBackgroundModes:["audio"] in app.json). Zonder
-    // dit stopt iOS de opname zodra de telefoon in sluimerstand gaat.
-    // shouldPlayInBackground enkel op iOS: daar houdt het de opname-sessie actief
-    // in sluimerstand. Op Android loopt de opname door via de microfoon-
-    // foreground-service; shouldPlayInBackground zou daar onnodig de
-    // MEDIA_PLAYBACK-foreground-service triggeren (die we niet gebruiken).
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, shouldPlayInBackground: Platform.OS === 'ios' });
+    // Achtergrondopname vereist een eigen runtime-vlag naast de native configuratie
+    // (expo-audio enableBackgroundRecording). Zonder deze vlag pauzeert Expo de
+    // recorder op iOS zodra de app naar de achtergrond gaat, ook als
+    // shouldPlayInBackground aanstaat. Android gebruikt de microfoon-service.
+    await setAudioModeAsync({
+      allowsRecording: true,
+      allowsBackgroundRecording: true,
+      playsInSilentMode: true,
+      shouldPlayInBackground: Platform.OS === 'ios',
+    });
     // Altijd MET opties voorbereiden: dan maakt expo-audio een NIEUW bestand aan.
     // Zonder opties hergebruikt iOS dezelfde AVAudioRecorder (zelfde bestandspad)
     // en zou een nog niet verstuurd vorig segment overschreven worden.
@@ -470,8 +471,8 @@ function Recorder({ session }: { session: Session }) {
       groupRef.current = meta; groupDurRef.current = 0;
       await setCurrentGroupId(meta.localId);
     }
-    // Scherm wakker houden tijdens de opname: anders gaat de telefoon in
-    // auto-sluimerstand en stopt iOS de opname (naast de background-audio-modus).
+    // Houd de timer zichtbaar zolang de gebruiker het scherm niet vergrendelt.
+    // Bij handmatig vergrendelen blijft de achtergrondopname actief.
     activateKeepAwakeAsync().catch(() => {});
     setSeconds(groupDurRef.current); setPhase('recording'); setMessage('');
     if (timer.current) clearInterval(timer.current);
@@ -676,7 +677,7 @@ function Recorder({ session }: { session: Session }) {
     <View style={[styles.center, { padding: 28 }]}>
       <View style={styles.recRing}><View style={styles.recCore} /></View>
       <Text style={styles.timer}>{mm}:{ss}</Text>
-      <Text style={styles.recHint}>Opname loopt. Houd het scherm aan tijdens de opname.{'\n'}{TYPE_LABELS[recType]}</Text>
+      <Text style={styles.recHint}>Opname loopt, ook als je het scherm vergrendelt.{'\n'}{TYPE_LABELS[recType]}</Text>
       <Pressable style={[styles.primary, styles.stop]} onPress={stopAndUpload}>
         <Text style={styles.primaryText}>Stop &amp; verstuur</Text>
       </Pressable>

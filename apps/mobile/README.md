@@ -12,10 +12,12 @@ AI-scorecards → competentie-analyse, allemaal bestaand).
    klant, trainer → toegewezen klanten, agency → alles).
 2. Type kiezen (fysieke meeting / telefoon-op-speaker / videocall), consent-schakelaar
    **verplicht** vóór de start (GDPR — wordt als `app_notice` gelogd in `capture_consents`).
-3. Opnemen. De app houdt het scherm wakker tijdens de opname. Op iOS blijft de
-   opname lopen zolang het scherm aan is (auto-vergrendelen wordt tegengehouden);
-   het scherm handmatig uitzetten pauzeert de opname (bekende expo-audio-beperking).
-   Android loopt door via een foreground service. (iOS `UIBackgroundModes: audio`.)
+3. Opnemen. De app houdt het scherm wakker om de timer zichtbaar te houden.
+   Bij handmatig vergrendelen blijft de opname actief via
+   `allowsBackgroundRecording: true` en de Expo-pluginoptie
+   `enableBackgroundRecording: true` (iOS `UIBackgroundModes: audio`;
+   Android microfoon-foreground-service). Op iOS is alleen de bestaande
+   microfoontoestemming nodig, geen aparte toestemming voor achtergrondopname.
 4. Stop & verstuur — upload via signed URL naar de privé-bucket; mislukte uploads
    blijven op het toestel en zijn opnieuw te versturen.
 
@@ -44,12 +46,33 @@ App-Store-conforme manier om hetzelfde resultaat te krijgen.
 ## Lokaal draaien
 
 ```bash
-cd capture-mobile
-npm install            # of: pnpm install
-npx expo install --fix # versies uitlijnen op de Expo SDK
+cd apps/mobile
+npm ci
 npx expo start         # QR-code scannen met Expo Go (let op: background-audio
                        # werkt pas volledig in een development/production build)
 ```
+
+Op een Mac met Xcode kun je een eigen app-build in de iPhone-simulator starten:
+
+```bash
+cd apps/mobile
+npm ci
+npx expo run:ios --device "iPhone 17 Pro"
+```
+
+De eerste keer genereert Expo het native iOS-project en installeert CocoaPods-
+dependencies. Hiervoor is geen betaalde Apple Developer-account nodig.
+De simulator is geschikt om de schermen, microfoontoestemming en basisopname
+te controleren; echte sluimerstand en onderbrekingen door oproepen moeten op
+een fysieke iPhone getest worden. Gebruik voor achtergrondopname een eigen
+native build met de pluginconfiguratie, niet Expo Go.
+
+Controle op een echte iPhone: start een opname, spreek vóór het vergrendelen,
+houd het toestel enkele minuten vergrendeld en spreek ook in die periode.
+Ontgrendel, stop en controleer of alle gesproken delen aanwezig zijn. Controleer
+ook wisselen naar een andere app en hervatten na een oproep.
+De automatische segmentrotatie na twintig minuten werkt momenteel alleen op de
+voorgrond; lange achtergrondopnames kunnen daardoor nog de uploadlimiet raken.
 
 ## Builds voor de stores (EAS) — Apple Developer-account is opgezet ✓
 

@@ -32,6 +32,7 @@
       [
         "expo-audio",
         {
+          "enableBackgroundRecording": true,
           "microphonePermission": "salesUp Capture neemt — na jouw expliciete start — gesprekken en meetings op voor kwaliteits- en trainingsdoeleinden."
         }
       ],
