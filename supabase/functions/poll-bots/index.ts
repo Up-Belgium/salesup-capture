@@ -120,6 +120,13 @@ function findStreamingTranscriptUrl(bot: any): string | null {
   return null
 }
 
+// De opname zelf is klaar bij Recall (los van het live-transcript, dat kan mislukken — bv. Deepgram 402).
+function recordingDone(bot: any): boolean {
+  const recs = Array.isArray(bot?.recordings) ? bot.recordings : []
+  if (recs.some((r: any) => String(r?.status?.code ?? '') === 'done')) return true
+  return lastStatusCode(bot) === 'done' && recs.length > 0
+}
+
 function botFailed(bot: any): boolean {
   const changes = Array.isArray(bot?.status_changes) ? bot.status_changes : []
   const last = changes.length ? String(changes[changes.length - 1]?.code ?? '') : ''
@@ -247,7 +254,9 @@ Deno.serve(async (req) => {
 
   // "Te oud" meten vanaf de MEETING (started_at), fallback op created_at.
   const refMs = (rec: any) => new Date(rec.started_at ?? rec.created_at).getTime()
-  const tooOld = (rec: any) => Date.now() - refMs(rec) > MAX_AGE_H * 3600_000
+  // Herstel (recover_recording_ids): opnames die al op 'error' stonden, krijgen geen 24u-limiet; de cron raakt ze niet.
+  const recovering = Array.isArray(body?.recover_recording_ids) && body.recover_recording_ids.length > 0
+  const tooOld = (rec: any) => !recovering && Date.now() - refMs(rec) > MAX_AGE_H * 3600_000
 
   // Verwerk één opname. Geeft 'done' | 'waiting' | 'failed' terug.
   async function processOne(rec: any): Promise<'done' | 'waiting' | 'failed'> {
@@ -296,9 +305,10 @@ Deno.serve(async (req) => {
     }
 
     // ── Fase 1: nog geen async job → aanvragen zodra de opname verwerkt is ─
-    // Signaal dat de media klaar is: het streaming-transcript is beschikbaar.
+    // Signaal dat de media klaar is: het streaming-transcript is beschikbaar, of de opname zelf is afgerond
+    // (het live-transcript kan mislukken terwijl de opname er wel is — dan toch async transcriberen).
     const recordingId = firstRecordingId(bot)
-    const mediaReady = !!findStreamingTranscriptUrl(bot)
+    const mediaReady = !!findStreamingTranscriptUrl(bot) || recordingDone(bot)
     if (recordingId && mediaReady) {
       const transcriptId = await createAsyncTranscript(recordingId)
       await sb.from('recordings').update({ recall_async_transcript_id: transcriptId, error: null }).eq('id', rec.id)
@@ -328,6 +338,8 @@ Deno.serve(async (req) => {
     .limit(limit)
   if (body?.retranscribe_recording_id) {
     q = q.eq('id', body.retranscribe_recording_id) // ongeacht status (backfill/test)
+  } else if (recovering) {
+    q = q.in('id', body.recover_recording_ids.slice(0, 50)) // herstel: ongeacht status, zonder 24u-limiet
   } else if (body?.recording_id) {
     q = q.eq('id', body.recording_id).eq('status', 'pending_upload')
   } else {
