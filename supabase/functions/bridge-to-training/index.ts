@@ -24,6 +24,10 @@ function cronForbidden(req: Request): Response | null {
   return new Response(JSON.stringify({ error: 'forbidden (cron-secret)' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
 }
 
+// Opnametype in Capture → medium in training. 'phone' hoort niet bij Capture (telefonie
+// loopt via het belplatform) maar wordt eerlijk doorgegeven als het toch voorkomt.
+const MEDIUM: Record<string, string> = { video_meeting: 'video', in_person: 'in_person', phone: 'phone' }
+
 Deno.serve(async (req) => {
   const denied = cronForbidden(req); if (denied) return denied
   const trainingUrl = (Deno.env.get('TRAINING_URL') ?? '').trim()
@@ -61,6 +65,13 @@ Deno.serve(async (req) => {
           duration_seconds: rec.duration_seconds,
           provider:         'salesup_capture',
           language:         rec.language,
+          // Meeting-titel mee zodat de call in het platform herkenbaar is
+          // (verscheen anders als '— geen titel —').
+          insights:         rec.title ? { title: rec.title } : null,
+          // Capture = Sales Quality; medium en titel voor de schermen (migratie 45 training).
+          module:           'sales',
+          medium:           MEDIUM[rec.recording_type] ?? null,
+          title:            rec.title ?? null,
         })
         if (insErr) throw new Error(insErr.message)
       }
