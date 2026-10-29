@@ -1,5 +1,6 @@
 // salesUp Capture — iOS/Android app
-// 2026 light-theme. Kernidee: opnemen moet in één gebaar kunnen.
+// Huisstijl salesUp (okt 2026): navy, oranje, Poppins; tabs Opnemen, Meetings, Instellingen.
+// Kernidee: opnemen moet in één gebaar kunnen.
 //  - Groot één-tik opnameveld op het hoofdscherm.
 //  - Snelstart via deep link salesupcapture://record → opent de app en start
 //    meteen (koppelbaar aan Back Tap, Action Button, Siri of Bedieningspaneel
@@ -13,9 +14,18 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Linking, Platform, Pressable,
-  ScrollView, StyleSheet, Switch, Text, TextInput, View,
+  ActivityIndicator, Alert, Animated, AppState, Easing, Image, KeyboardAvoidingView, Linking, Platform, Pressable,
+  RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+import { useFonts } from 'expo-font';
+// Enkel de gebruikte gewichten importeren (de hoofdmodule bundelt alle 18 varianten).
+import { Poppins_400Regular } from '@expo-google-fonts/poppins/400Regular';
+import { Poppins_500Medium } from '@expo-google-fonts/poppins/500Medium';
+import { Poppins_600SemiBold } from '@expo-google-fonts/poppins/600SemiBold';
+import { Poppins_700Bold } from '@expo-google-fonts/poppins/700Bold';
+import { Poppins_800ExtraBold } from '@expo-google-fonts/poppins/800ExtraBold';
+import { Poppins_900Black } from '@expo-google-fonts/poppins/900Black';
 import { StatusBar } from 'expo-status-bar';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
 import type { RecordingOptions } from 'expo-audio';
@@ -65,9 +75,15 @@ async function registerForPush(accessToken: string) {
 }
 
 const C = {
-  bg: '#eef1f6', surface: '#ffffff', ink: '#1a2540', muted: '#6b7488',
-  line: '#e4e8f0', orange: '#FF6B35', orangeSoft: '#fff3ee', green: '#15936b', red: '#e2483f',
+  navy: '#193C6C', navyDark: '#151E35', orange: '#EF7D00', orangeSoft: '#FDF3EA', orangeLine: '#F6D9BC',
+  bg: '#F5F6FA', surface: '#ffffff', ink: '#1D2433', muted: '#6B7280', line: '#E1E6EF', blueTint: '#EEF2F8',
+  green: '#15803D', greenTint: '#E8F6EE', red: '#E0322B', redTint: '#FDECEC',
 };
+// Poppins-gewichten (in React Native kiest fontWeight geen gewicht van een eigen font).
+const F = {
+  r: 'Poppins_400Regular', m: 'Poppins_500Medium', s: 'Poppins_600SemiBold', b: 'Poppins_700Bold', x: 'Poppins_800ExtraBold', k: 'Poppins_900Black',
+};
+const TOP = (Constants.statusBarHeight || (Platform.OS === 'ios' ? 47 : 24)) + 12;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
@@ -115,6 +131,11 @@ const runQueue = () => processQueue({ getToken });
 const fmtDate = (iso: string | number) =>
   new Date(iso).toLocaleString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const fmtMb = (bytes: number) => (bytes / 1_000_000).toFixed(bytes >= 10_000_000 ? 0 : 1);
+const fmtShort = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' }).replace('.', '')} · ${d.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}`;
+};
+type MeetingRow = { id: string; title: string | null; recording_type: string; started_at: string; duration_seconds: number | null; status: string };
 
 type OrphanMatch = {
   recording_id: string; org_id: string; status: string; has_file: boolean;
@@ -126,6 +147,9 @@ type GroupMeta = { localId: string; orgId: string; recType: RecordingType; title
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
+  const [fontsLoaded, fontError] = useFonts({
+    Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold, Poppins_800ExtraBold, Poppins_900Black,
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setBooting(false); });
@@ -145,10 +169,10 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  if (booting) return <View style={[styles.screen, styles.center]}><ActivityIndicator color={C.orange} size="large" /></View>;
+  // Fonts laden mag de app nooit blokkeren: bij een fout val je terug op het systeemfont.
+  if (booting || (!fontsLoaded && !fontError)) return <View style={[styles.screen, styles.center, { backgroundColor: C.navy }]}><ActivityIndicator color={C.orange} size="large" /></View>;
   return (
     <View style={styles.screen}>
-      <StatusBar style="dark" />
       {session ? <Recorder session={session} /> : <Login />}
     </View>
   );
@@ -170,7 +194,7 @@ function Login() {
   async function submit() {
     setBusy(true); setError('');
     const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (err) setError('Inloggen mislukt — controleer e-mail en wachtwoord.');
+    if (err) setError('Inloggen mislukt. Controleer je e-mailadres en wachtwoord.');
     setBusy(false);
   }
 
@@ -180,8 +204,8 @@ function Login() {
     setBusy(true); setError(''); setInfo('');
     const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim());
     if (err) setError(/rate|limit|seconds/i.test(err.message || '')
-      ? 'Te veel pogingen — wacht even en probeer opnieuw.'
-      : 'Kon geen code versturen — controleer je e-mailadres.');
+      ? 'Te veel pogingen. Wacht even en probeer opnieuw.'
+      : 'Kon geen code versturen. Controleer je e-mailadres.');
     else { setMode('reset_verify'); setInfo('We stuurden een code naar je mailbox.'); }
     setBusy(false);
   }
@@ -193,9 +217,9 @@ function Login() {
     }
     setBusy(true); setError(''); setInfo('');
     const { error: vErr } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
-    if (vErr) { setError('Code ongeldig of verlopen — vraag een nieuwe aan.'); setBusy(false); return; }
+    if (vErr) { setError('Code ongeldig of verlopen. Vraag een nieuwe aan.'); setBusy(false); return; }
     const { error: uErr } = await supabase.auth.updateUser({ password: newPassword });
-    if (uErr) { setError('Kon wachtwoord niet instellen — probeer opnieuw.'); setBusy(false); return; }
+    if (uErr) { setError('Kon het wachtwoord niet instellen. Probeer opnieuw.'); setBusy(false); return; }
     // Sessie is nu actief → onAuthStateChange opent de app automatisch.
   }
 
@@ -203,62 +227,128 @@ function Login() {
     setMode('login'); setError(''); setInfo(''); setCode(''); setNewPassword('');
   }
 
+  const fieldProps = { placeholderTextColor: 'rgba(255,255,255,0.45)', style: styles.darkInput };
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.center}>
-      <Wordmark />
-      <Text style={styles.subtitle}>
-        {mode === 'login' ? 'Log in met je salesUp-account'
-          : mode === 'reset_request' ? 'Wachtwoord opnieuw instellen'
-          : 'Voer de code in en kies een nieuw wachtwoord'}
-      </Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {info ? <Text style={styles.success}>{info}</Text> : null}
+    <View style={styles.navyScreen}>
+      <StatusBar style="light" />
+      <Lines />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.loginWrap} keyboardShouldPersistTaps="handled">
+          <View>
+            <Logo light height={36} />
+            <View style={{ marginTop: 52 }}>
+              <View style={[styles.tb, styles.tbOrange]}><Text style={styles.tbOrangeText}>NEEM OP,</Text></View>
+              <View style={[styles.tb, styles.tbWhite]}><Text style={styles.tbWhiteText}>WIJ DOEN DE{'\n'}REST</Text></View>
+            </View>
+          </View>
 
-      {mode === 'login' && (
-        <View style={styles.card}>
-          <TextInput style={styles.input} placeholder="E-mailadres" placeholderTextColor="#aab0bf"
-            autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-          <TextInput style={styles.input} placeholder="Wachtwoord" placeholderTextColor="#aab0bf"
-            secureTextEntry value={password} onChangeText={setPassword} />
-          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={submit} disabled={busy}>
-            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Inloggen'}</Text>
-          </Pressable>
-          <Pressable style={styles.linkBtn} onPress={() => { setMode('reset_request'); setError(''); }}>
-            <Text style={styles.link}>Wachtwoord vergeten?</Text>
-          </Pressable>
-        </View>
-      )}
+          <View style={{ marginTop: 40 }}>
+            {mode !== 'login' && (
+              <Text style={styles.loginSub}>
+                {mode === 'reset_request' ? 'Wachtwoord opnieuw instellen' : 'Voer de code in en kies een nieuw wachtwoord'}
+              </Text>
+            )}
+            {error ? <Text style={styles.loginError}>{error}</Text> : null}
+            {info ? <Text style={styles.loginInfo}>{info}</Text> : null}
 
-      {mode === 'reset_request' && (
-        <View style={styles.card}>
-          <TextInput style={styles.input} placeholder="E-mailadres" placeholderTextColor="#aab0bf"
-            autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={requestCode} disabled={busy}>
-            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Stuur code'}</Text>
-          </Pressable>
-          <Pressable style={styles.linkBtn} onPress={backToLogin}><Text style={styles.link}>Terug naar inloggen</Text></Pressable>
-        </View>
-      )}
+            {mode !== 'reset_verify' && (
+              <IconField icon="mail">
+                <TextInput {...fieldProps} placeholder="E-mailadres" autoCapitalize="none" keyboardType="email-address"
+                  value={email} onChangeText={setEmail} />
+              </IconField>
+            )}
+            {mode === 'login' && (
+              <IconField icon="lock">
+                <TextInput {...fieldProps} placeholder="Wachtwoord" secureTextEntry value={password} onChangeText={setPassword} />
+              </IconField>
+            )}
+            {mode === 'reset_verify' && (
+              <>
+                <IconField icon="hash">
+                  <TextInput {...fieldProps} placeholder="Code uit de e-mail" autoCapitalize="none" autoCorrect={false}
+                    value={code} onChangeText={setCode} />
+                </IconField>
+                <IconField icon="lock">
+                  <TextInput {...fieldProps} placeholder="Nieuw wachtwoord (min. 8 tekens)" secureTextEntry
+                    value={newPassword} onChangeText={setNewPassword} />
+                </IconField>
+              </>
+            )}
 
-      {mode === 'reset_verify' && (
-        <View style={styles.card}>
-          <TextInput style={styles.input} placeholder="Code uit de e-mail" placeholderTextColor="#aab0bf"
-            autoCapitalize="none" autoCorrect={false} value={code} onChangeText={setCode} />
-          <TextInput style={styles.input} placeholder="Nieuw wachtwoord (min. 8 tekens)" placeholderTextColor="#aab0bf"
-            secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-          <Pressable style={[styles.primary, busy && styles.disabled]} onPress={verifyAndSet} disabled={busy}>
-            <Text style={styles.primaryText}>{busy ? 'Bezig…' : 'Wachtwoord instellen'}</Text>
-          </Pressable>
-          <Pressable style={styles.linkBtn} onPress={requestCode} disabled={busy}><Text style={styles.link}>Geen code ontvangen? Stuur opnieuw</Text></Pressable>
-          <Pressable style={styles.linkBtn} onPress={backToLogin}><Text style={styles.link}>Terug naar inloggen</Text></Pressable>
-        </View>
-      )}
-    </KeyboardAvoidingView>
+            <Pressable style={[styles.btnOrange, { marginTop: 8 }, busy && styles.disabled]} disabled={busy}
+              onPress={mode === 'login' ? submit : mode === 'reset_request' ? requestCode : verifyAndSet}>
+              <Text style={styles.btnText}>
+                {busy ? 'Bezig…' : mode === 'login' ? 'Inloggen' : mode === 'reset_request' ? 'Stuur code' : 'Wachtwoord instellen'}
+              </Text>
+            </Pressable>
+
+            {mode === 'login' && (
+              <Pressable style={styles.lightLinkBtn} onPress={() => { setMode('reset_request'); setError(''); }}>
+                <Text style={styles.lightLink}>Wachtwoord vergeten?</Text>
+              </Pressable>
+            )}
+            {mode === 'reset_verify' && (
+              <Pressable style={styles.lightLinkBtn} onPress={requestCode} disabled={busy}>
+                <Text style={styles.lightLink}>Geen code ontvangen? Stuur opnieuw</Text>
+              </Pressable>
+            )}
+            {mode !== 'login' && (
+              <Pressable style={styles.lightLinkBtn} onPress={backToLogin}><Text style={styles.lightLink}>Terug naar inloggen</Text></Pressable>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
-function Wordmark() {
-  return <Text style={styles.logo}>sales<Text style={{ color: C.orange }}>Up</Text> Capture</Text>;
+const LOGO_RATIO = 600 / 249;
+function Logo({ light, height = 28 }: { light?: boolean; height?: number }) {
+  return (
+    <Image source={light ? require('./assets/brand/logo-wit.png') : require('./assets/brand/logo-navy.png')}
+      style={{ height, width: height * LOGO_RATIO }} resizeMode="contain" accessibilityLabel="salesUp" />
+  );
+}
+
+// Diagonale lijnen over de navy achtergrond (zoals de zijbalk van het trainingsplatform).
+function Lines() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {Array.from({ length: 18 }, (_, i) => (
+        <View key={i} style={{ position: 'absolute', top: -200, bottom: -200, left: i * 44 - 120, width: 1,
+          backgroundColor: 'rgba(255,255,255,0.05)', transform: [{ rotate: '24deg' }] }} />
+      ))}
+    </View>
+  );
+}
+
+function IconField({ icon, children }: { icon: any; children: React.ReactNode }) {
+  return (
+    <View style={styles.darkField}>
+      <Feather name={icon} size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 14 }} />
+      {children}
+    </View>
+  );
+}
+
+// Golfvorm tijdens de opname (decoratief, beweegt zolang er opgenomen wordt).
+function Wave({ running }: { running: boolean }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!running) { v.stopAnimation(); return; }
+    const loop = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [running, v]);
+  return (
+    <View style={styles.wave}>
+      {Array.from({ length: 34 }, (_, i) => {
+        const base = 0.35 + ((i * 37) % 60) / 100;
+        const scaleY = v.interpolate({ inputRange: [0, 0.5, 1], outputRange: [base, i % 3 === 0 ? 0.3 : 1, base] });
+        return <Animated.View key={i} style={[styles.waveBar, { opacity: running ? 1 : 0.4, transform: [{ scaleY }] }]} />;
+      })}
+    </View>
+  );
 }
 
 // ── Recorder ─────────────────────────────────────────────────────────────────
@@ -270,7 +360,6 @@ function Recorder({ session }: { session: Session }) {
   const [title, setTitle] = useState('');
   const [standingConsent, setStandingConsent] = useState(false);
   const [quickStart, setQuickStart] = useState(false);
-  const [showMore, setShowMore] = useState(false);
   const [botUrl, setBotUrl] = useState('');
   const [botBusy, setBotBusy] = useState(false);
 
@@ -289,6 +378,11 @@ function Recorder({ session }: { session: Session }) {
   const groupDurRef = useRef(0);        // som van de al afgewerkte segmentduren
   const segStartRef = useRef(0);        // start (ms) van het lopende segment
   const rotatingRef = useRef<Promise<void> | null>(null);
+  const pausedRef = useRef(false);      // opname gepauzeerd door de gebruiker
+  const pauseStartRef = useRef(0);      // start (ms) van de lopende pauze
+  const pausedMsRef = useRef(0);        // som van de pauzes in het lopende segment
+  const [paused, setPaused] = useState(false);
+  const [tab, setTab] = useState<'record' | 'meetings' | 'settings'>('record');
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<'idle' | 'recording' | 'uploading' | 'done' | 'failed' | 'interrupted'>('idle');
   const phaseRef = useRef(phase);
@@ -327,9 +421,14 @@ function Recorder({ session }: { session: Session }) {
         const json = await ingest('context', {}, session.access_token);
         setCtx(json);
         if (json.orgs?.length === 1) setClientId(json.orgs[0].id);
+        else {
+          // Bij meerdere klanten: de laatst gekozen klant opnieuw voorstellen.
+          const last = await AsyncStorage.getItem('lastClientId');
+          if (last && json.orgs?.some((o: any) => o.id === last)) setClientId(last);
+        }
       } catch (e: any) {
         setCtxError(e.message === 'unauthorized'
-          ? 'Geen toegang — dit account is niet gekoppeld aan salesUp Capture.'
+          ? 'Geen toegang: dit account is niet gekoppeld aan salesUp Capture.'
           : `Kon profiel niet laden: ${e.message}`);
       }
     })();
@@ -399,7 +498,7 @@ function Recorder({ session }: { session: Session }) {
         });
       } else {
         const org = clientIdRef.current;
-        if (!org) { Alert.alert('Kies een klant', 'Selecteer onder "Meer opties" voor welke klant deze opname is.'); return; }
+        if (!org) { Alert.alert('Kies een klant', 'Kies op het tabblad Opnemen voor welke klant deze opname is.'); return; }
         await enqueueRescued({
           uri: o.uri, orgId: org, recType: recTypeRef.current, title: 'Herstelde opname',
           startedAt: new Date(o.modifiedAt - o.estDuration * 1000).toISOString(), duration: o.estDuration,
@@ -420,7 +519,12 @@ function Recorder({ session }: { session: Session }) {
     ]);
   }
 
-  const segDur = () => Math.max(0, Math.round((Date.now() - segStartRef.current) / 1000));
+  // Duur van het lopende segment zonder de pauzes.
+  const segDur = () => {
+    const pausedNow = pausedRef.current ? Date.now() - pauseStartRef.current : 0;
+    return Math.max(0, Math.round((Date.now() - segStartRef.current - pausedMsRef.current - pausedNow) / 1000));
+  };
+  const resetPause = () => { pausedRef.current = false; pausedMsRef.current = 0; pauseStartRef.current = 0; setPaused(false); };
 
   // Afgewerkt segment → duurzaam in de wachtrij (bestand wordt verhuisd naar
   // documentDirectory/pending/). finalize=true: laatste segment van de opname.
@@ -435,12 +539,12 @@ function Recorder({ session }: { session: Session }) {
   const start = useCallback(async (opts?: { fromDeepLink?: boolean; resume?: boolean }) => {
     if (recordingActive.current) return; // al bezig
     if (!consentRef.current) {
-      Alert.alert('Eerst consent', 'Zet "Ik informeer mijn gesprekspartners" aan om (snel) te kunnen opnemen.');
+      Alert.alert('Eerst toestemming', 'Zet bij Instellingen "Ik informeer mijn gesprekspartners" aan om te kunnen opnemen.');
       return;
     }
     const resuming = !!opts?.resume && !!groupRef.current;
     const org = resuming ? groupRef.current!.orgId : clientIdRef.current;
-    if (!org) { Alert.alert('Kies een klant', 'Selecteer onder "Meer opties" voor welke klant je opneemt.'); return; }
+    if (!org) { Alert.alert('Kies een klant', 'Kies bovenaan voor welke klant je opneemt.'); return; }
     const perm = await AudioModule.requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microfoon vereist', 'Geef toegang tot de microfoon om op te nemen.'); return; }
     // Achtergrondopname vereist een eigen runtime-vlag naast de native configuratie
@@ -462,6 +566,7 @@ function Recorder({ session }: { session: Session }) {
     interruptedRef.current = false;
     restoredRef.current = false;
     segStartRef.current = Date.now();
+    resetPause();
     if (!resuming) {
       // nieuwe opname → nieuwe groep in de wachtrij
       const meta: GroupMeta = {
@@ -476,7 +581,7 @@ function Recorder({ session }: { session: Session }) {
     activateKeepAwakeAsync().catch(() => {});
     setSeconds(groupDurRef.current); setPhase('recording'); setMessage('');
     if (timer.current) clearInterval(timer.current);
-    timer.current = setInterval(() => { setSeconds((s) => s + 1); tickRef.current(); }, 1000);
+    timer.current = setInterval(() => { if (!pausedRef.current) setSeconds((s) => s + 1); tickRef.current(); }, 1000);
   }, []);
 
   // ── Deep link: salesupcapture://record → meteen opnemen ──────────────────
@@ -530,16 +635,17 @@ function Recorder({ session }: { session: Session }) {
       await recorder.stop();
       const uri = recorder.uri ?? '';
       recordingActive.current = false;
+      resetPause();
       if (uri && dur >= 1) await finishSegment(uri, dur, true);
       else if (meta) { await finalizeGroup(meta.localId); groupRef.current = null; groupDurRef.current = 0; await setCurrentGroupId(null); }
       const queued = meta ? (await getQueue()).some((g) => g.localId === meta.localId) : false;
       if (!queued) throw new Error('Geen opnamebestand gevonden.');
       setTitle('');
-      setPhase('done'); setMessage('Opname bewaard op dit toestel — wordt nu verstuurd…');
+      setPhase('done'); setMessage('Opname bewaard op dit toestel en wordt nu verstuurd…');
       runQueue().then(async () => {
         if (phaseRef.current !== 'done' && phaseRef.current !== 'failed') return; // intussen nieuwe opname
         const still = (await getQueue()).find((g) => g.localId === meta!.localId);
-        if (!still) { setPhase('done'); setMessage('Opname verstuurd — verslag volgt automatisch per mail.'); }
+        if (!still) { setPhase('done'); setMessage('Opname verstuurd. Het verslag volgt per mail.'); }
         else {
           setPhase('failed');
           setMessage(`Versturen nog niet gelukt${still.lastError ? `: ${still.lastError}` : ''}. De opname is veilig bewaard op dit toestel en wordt automatisch opnieuw verstuurd.`);
@@ -561,8 +667,9 @@ function Recorder({ session }: { session: Session }) {
     interruptedRef.current = true; // klaar om te hervatten (automatisch of via de knop)
     if (timer.current) clearInterval(timer.current);
     const dur = segDur();
+    resetPause();
     setPhase('uploading');
-    setMessage('Opname onderbroken (bv. door een oproep) — het opgenomen deel wordt bewaard.');
+    setMessage('Opname onderbroken (bv. door een oproep). Het opgenomen deel wordt bewaard.');
     try {
       let uri = status?.url ?? '';
       if (!uri) { try { await recorder.stop(); } catch { /* recorder al ongeldig */ } uri = recorder.uri ?? ''; }
@@ -597,6 +704,7 @@ function Recorder({ session }: { session: Session }) {
         await recorder.prepareToRecordAsync(SPEECH_PRESET);
         recorder.record();
         segStartRef.current = Date.now();
+        pausedMsRef.current = 0;
       } catch (e: any) {
         recordingActive.current = false;
         interruptedRef.current = true;
@@ -620,12 +728,27 @@ function Recorder({ session }: { session: Session }) {
       if (status?.mediaServicesDidReset || status?.hasError) handleInterruption(status);
     };
     tickRef.current = () => {
-      if (!ROTATION_ENABLED || !recordingActive.current || rotatingRef.current) return;
+      if (!ROTATION_ENABLED || !recordingActive.current || rotatingRef.current || pausedRef.current) return;
       if (Date.now() - segStartRef.current < SEGMENT_MINUTES * 60_000) return;
       if (AppState.currentState !== 'active') return; // niet op de achtergrond; volgende kans
       rotateSegment();
     };
   });
+
+  // Pauze door de gebruiker: de recorder pauzeert, het segment blijft open.
+  function togglePause() {
+    if (!recordingActive.current || rotatingRef.current) return;
+    try {
+      if (!pausedRef.current) {
+        recorder.pause();
+        pausedRef.current = true; pauseStartRef.current = Date.now(); setPaused(true);
+      } else {
+        recorder.record();
+        pausedMsRef.current += Date.now() - pauseStartRef.current;
+        pausedRef.current = false; setPaused(false);
+      }
+    } catch (e: any) { Alert.alert('Pauze', e?.message ?? String(e)); }
+  }
 
   // Onderbroken opname afsluiten zonder te hervatten → één verslag van de delen.
   async function finishInterrupted() {
@@ -639,8 +762,8 @@ function Recorder({ session }: { session: Session }) {
     if (!meta) { setPhase('idle'); setMessage(''); return; }
     await finalizeGroup(meta.localId);
     const queued = (await getQueue()).some((g) => g.localId === meta.localId);
-    if (!queued) { setPhase('done'); setMessage('Opname afgerond — er werd niets opgenomen.'); return; }
-    setPhase('done'); setMessage('Opname afgerond en wordt verstuurd — verslag volgt automatisch per mail.');
+    if (!queued) { setPhase('done'); setMessage('Opname afgerond. Er werd niets opgenomen.'); return; }
+    setPhase('done'); setMessage('Opname afgerond en wordt verstuurd. Het verslag volgt per mail.');
     runQueue();
   }
 
@@ -651,6 +774,35 @@ function Recorder({ session }: { session: Session }) {
     ]);
   }
 
+  // ── Meetings (server) en eerstvolgende agenda-afspraak ───────────────────
+  const [meetings, setMeetings] = useState<MeetingRow[]>([]);
+  const [meetingsBusy, setMeetingsBusy] = useState(false);
+  const [nextUp, setNextUp] = useState<{ title: string | null; started_at: string; recording_type: string } | null>(null);
+  const [pickClient, setPickClient] = useState(false);
+  const [showTitle, setShowTitle] = useState(false);
+
+  const loadMeetings = useCallback(async () => {
+    setMeetingsBusy(true);
+    const soon = new Date(Date.now() + 15 * 60_000).toISOString();
+    const { data } = await supabase.from('recordings')
+      .select('id,title,recording_type,started_at,duration_seconds,status')
+      .neq('status', 'cancelled').lte('started_at', soon)
+      .order('started_at', { ascending: false }).limit(50);
+    setMeetings((data as MeetingRow[]) ?? []);
+    setMeetingsBusy(false);
+  }, []);
+  const loadNextUp = useCallback(async () => {
+    const { data } = await supabase.from('recordings')
+      .select('title,started_at,recording_type')
+      .eq('status', 'pending_upload').gt('started_at', new Date().toISOString())
+      .order('started_at', { ascending: true }).limit(1);
+    const n = data?.[0];
+    setNextUp(n && new Date(n.started_at).toDateString() === new Date().toDateString() ? n : null);
+  }, []);
+  useEffect(() => { if (ctx) { loadNextUp(); loadMeetings(); } }, [ctx, loadNextUp, loadMeetings]);
+  useEffect(() => { if (tab === 'meetings') loadMeetings(); if (tab === 'record') loadNextUp(); }, [tab, loadMeetings, loadNextUp]);
+  useEffect(() => { if (!qState.busy && phase === 'done') loadMeetings(); }, [qState.busy, phase, loadMeetings]);
+
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
 
@@ -659,274 +811,471 @@ function Recorder({ session }: { session: Session }) {
   const currentQueued = queue.find((g) => g.localId === groupRef.current?.localId) ?? null;
   const lastError = pending.find((g) => g.lastError)?.lastError ?? null;
   const prog = qState.progress;
-  const progText = prog && prog.total > 0
-    ? `Versturen… ${Math.round((prog.sent / prog.total) * 100)}% (${fmtMb(prog.sent)} van ${fmtMb(prog.total)} MB)`
-    : 'Versturen…';
+  const progPct = prog && prog.total > 0 ? Math.round((prog.sent / prog.total) * 100) : null;
+
+  const email = session.user.email ?? '';
+  const name = (session.user.user_metadata as any)?.full_name || email.split('@')[0] || '';
+  const initials = name.replace(/[._-]+/g, ' ').trim().split(/\s+/).slice(0, 2).map((w: string) => w[0] || '').join('').toUpperCase() || 'U';
+  const clientName = ctx?.orgs.find((o) => o.id === clientId)?.name ?? '';
 
   if (ctxError) return (
-    <View style={styles.center}>
-      <Wordmark />
+    <View style={[styles.center, { backgroundColor: C.surface }]}>
+      <StatusBar style="dark" />
+      <Logo height={34} />
       <Text style={styles.error}>{ctxError}</Text>
       <Pressable style={styles.linkBtn} onPress={() => supabase.auth.signOut()}><Text style={styles.link}>Uitloggen</Text></Pressable>
     </View>
   );
-  if (!ctx) return <View style={styles.center}><ActivityIndicator color={C.orange} size="large" /></View>;
+  if (!ctx) return <View style={[styles.center, { backgroundColor: C.surface }]}><StatusBar style="dark" /><ActivityIndicator color={C.orange} size="large" /></View>;
 
   // ── Opnamescherm ─────────────────────────────────────────────────────────
   if (phase === 'recording') return (
-    <View style={[styles.center, { padding: 28 }]}>
-      <View style={styles.recRing}><View style={styles.recCore} /></View>
-      <Text style={styles.timer}>{mm}:{ss}</Text>
-      <Text style={styles.recHint}>Opname loopt, ook als je het scherm vergrendelt.{'\n'}{TYPE_LABELS[recType]}</Text>
-      <Pressable style={[styles.primary, styles.stop]} onPress={stopAndUpload}>
-        <Text style={styles.primaryText}>Stop &amp; verstuur</Text>
-      </Pressable>
-    </View>
-  );
-
-  // ── Onderbroken-scherm (bv. na een oproep) ───────────────────────────────
-  if (phase === 'interrupted') return (
-    <View style={[styles.center, { padding: 28 }]}>
-      <Text style={{ fontSize: 44, marginBottom: 6 }}>⚠️</Text>
-      <Text style={{ fontSize: 20, fontWeight: '700', color: C.ink, marginBottom: 8 }}>Opname onderbroken</Text>
-      <Text style={[styles.recHint, { marginBottom: 22 }]}>
-        {message || 'De opname werd onderbroken (bv. een oproep). Het opgenomen deel is bewaard.'}
-      </Text>
-      <Pressable style={styles.primary} onPress={resume}>
-        <Text style={styles.primaryText}>Hervat opname</Text>
-      </Pressable>
-      {currentQueued?.lastError ? (
-        <Text style={[styles.help, { marginTop: 14 }]}>
-          Versturen van het opgenomen deel is nog niet gelukt — het staat veilig op dit toestel en wordt automatisch opnieuw geprobeerd.
-        </Text>
-      ) : null}
-      <Pressable style={styles.linkBtn} onPress={finishInterrupted}>
-        <Text style={styles.link}>Klaar, stoppen</Text>
-      </Pressable>
-    </View>
-  );
-
-  // ── Hoofdscherm ──────────────────────────────────────────────────────────
-  const canRecord = standingConsent && !!clientId;
-  return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <Wordmark />
-
-      {/* Grote één-tik opnameknop */}
-      <Pressable
-        style={({ pressed }) => [styles.bigRecord, !canRecord && styles.bigRecordOff, pressed && { transform: [{ scale: 0.97 }] }]}
-        onPress={() => (phase === 'uploading' ? null : start())}>
-        {phase === 'uploading'
-          ? <ActivityIndicator color="#fff" size="large" />
-          : <><Text style={styles.bigRecordDot}>●</Text><Text style={styles.bigRecordText}>Opname starten</Text></>}
-      </Pressable>
-      <Text style={styles.bigCaption}>
-        {recType === 'phone' ? 'Telefoon: zet de speaker aan' : TYPE_LABELS[recType]}
-      </Text>
-
-      {/* Upload-wachtrij: opnames die nog niet (volledig) verstuurd zijn */}
-      {pending.length > 0 && (
-        <View style={[styles.card, styles.queueCard]}>
-          <Text style={styles.queueTitle}>
-            {pending.length === 1 ? '1 opname wacht op verzending' : `${pending.length} opnames wachten op verzending`}
+    <View style={styles.navyScreen}>
+      <StatusBar style="light" />
+      <Lines />
+      <View style={styles.recWrap}>
+        <View style={{ alignItems: 'center' }}>
+          <View style={[styles.livePill, paused && styles.livePillPaused]}>
+            <View style={[styles.liveDot, paused && { backgroundColor: C.navy }]} />
+            <Text style={[styles.liveText, paused && { color: C.navy }]}>{paused ? 'GEPAUZEERD' : 'OPNAME LOOPT'}</Text>
+          </View>
+          <Text style={styles.timer}>{mm}:{ss}</Text>
+          <Text style={styles.recSub}>
+            {[(title || '').trim() || TYPE_LABELS[recType], ctx.orgs.length > 1 ? clientName : ''].filter(Boolean).join(' · ')}
           </Text>
-          {qState.busy
-            ? <Text style={styles.queueText}>{progText}</Text>
-            : lastError ? <Text style={styles.queueErr}>Laatste fout: {lastError}</Text> : null}
+          <Wave running={!paused} />
+        </View>
+        <View>
+          <Pressable style={styles.btnWhite} onPress={togglePause}>
+            <Feather name={paused ? 'play' : 'pause'} size={16} color={C.navy} />
+            <Text style={styles.btnWhiteText}>{paused ? 'Hervat' : 'Pauze'}</Text>
+          </Pressable>
+          <Pressable style={[styles.btnRed, { marginTop: 12 }]} onPress={stopAndUpload}>
+            <Feather name="square" size={15} color="#fff" />
+            <Text style={styles.btnText}>Klaar, stoppen</Text>
+          </Pressable>
+          <Text style={styles.recNote}>Opname loopt, ook als je het scherm vergrendelt.</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // ── Banner: onderbroken opname (bv. na een oproep) ───────────────────────
+  const interruptedBanner = phase === 'interrupted' ? (
+    <View style={styles.alertCard}>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Feather name="alert-triangle" size={18} color="#9A5B00" style={{ marginTop: 1 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.alertTitle}>Opname onderbroken</Text>
+          <Text style={styles.alertText}>{message || 'De opname werd onderbroken (bv. een oproep). Het opgenomen deel is bewaard.'}</Text>
+          {currentQueued?.lastError ? (
+            <Text style={[styles.alertText, { marginTop: 6 }]}>Het opgenomen deel is nog niet verstuurd. Het staat veilig op dit toestel en we proberen het automatisch opnieuw.</Text>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12 }}>
+            <Pressable style={styles.btnOrangeSm} onPress={resume}>
+              <Feather name="play" size={14} color="#fff" />
+              <Text style={styles.btnSmText}>Hervat opname</Text>
+            </Pressable>
+            <Pressable onPress={finishInterrupted}><Text style={styles.linkStrong}>Klaar, stoppen</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
+  const header = (titleText?: string) => (
+    <View style={styles.header}>
+      <View style={styles.headerRow}>
+        <Logo height={30} />
+        <Pressable style={styles.avatar} onPress={() => setTab('settings')} accessibilityLabel="Instellingen">
+          <Text style={styles.avatarText}>{initials}</Text>
+        </Pressable>
+      </View>
+      {titleText ? <Text style={styles.h1}>{titleText}</Text> : null}
+    </View>
+  );
+
+  const canRecord = standingConsent && !!clientId;
+  const nextTime = nextUp ? new Date(nextUp.started_at).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' }) : '';
+
+  // ── Tab: Opnemen ─────────────────────────────────────────────────────────
+  const recordTab = (
+    <ScrollView contentContainerStyle={styles.tabBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {header()}
+      {interruptedBanner}
+
+      {phase !== 'interrupted' && (
+        <>
+          <Text style={styles.label}>KLANT</Text>
+          <Pressable style={styles.select} disabled={ctx.orgs.length < 2} onPress={() => setPickClient((v) => !v)}>
+            <Text style={[styles.selectText, !clientName && { color: C.muted }]} numberOfLines={1}>{clientName || 'Kies een klant'}</Text>
+            {ctx.orgs.length > 1 && <Feather name="chevron-down" size={18} color={C.muted} />}
+          </Pressable>
+          {pickClient && (
+            <View style={styles.pickList}>
+              {ctx.orgs.map((c) => (
+                <Pressable key={c.id} style={styles.pickItem} onPress={() => { setClientId(c.id); setPickClient(false); AsyncStorage.setItem('lastClientId', c.id).catch(() => {}); }}>
+                  <Text style={[styles.pickText, clientId === c.id && { fontFamily: F.s, color: C.navy }]}>{c.name}</Text>
+                  {clientId === c.id && <Feather name="check" size={16} color={C.navy} />}
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {/* Capture neemt fysieke gesprekken en videocalls op; telefoon loopt via het belplatform (Call Quality). */}
+          <View style={styles.segment}>
+            {(['in_person', 'video_meeting'] as RecordingType[]).map((t) => (
+              <Pressable key={t} style={[styles.segItem, recType === t && styles.segItemOn]} onPress={() => setRecType(t)}>
+                <Text style={[styles.segText, recType === t && styles.segTextOn]}>{t === 'in_person' ? 'Fysiek' : 'Video'}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={{ alignItems: 'center', marginTop: 26 }}>
+            <View style={styles.halo2}>
+              <View style={styles.halo1}>
+                <Pressable
+                  accessibilityLabel="Opname starten"
+                  style={({ pressed }) => [styles.micBtn, !canRecord && { opacity: 0.55 }, pressed && { transform: [{ scale: 0.96 }] }]}
+                  onPress={() => (phase === 'uploading' ? null : start())}>
+                  {phase === 'uploading'
+                    ? <ActivityIndicator color="#fff" size="large" />
+                    : <Feather name="mic" size={52} color="#fff" />}
+                </Pressable>
+              </View>
+            </View>
+            <Text style={styles.micTitle}>Opname starten</Text>
+            <Text style={styles.micCaption}>
+              {!standingConsent ? 'Zet eerst de toestemming aan bij Instellingen.'
+                : !clientId ? 'Kies eerst een klant.'
+                : quickStart ? 'Snelstart aan: één gebaar start meteen.'
+                : 'Tik om op te nemen.'}
+            </Text>
+            {showTitle ? (
+              <TextInput style={[styles.input, { marginTop: 14, alignSelf: 'stretch' }]} placeholder="Titel (optioneel), bv. schatting appartement"
+                placeholderTextColor="#A6AEBD" value={title} onChangeText={setTitle} />
+            ) : (
+              <Pressable onPress={() => setShowTitle(true)} style={{ marginTop: 10 }}>
+                <Text style={styles.linkStrong}>+ Titel toevoegen</Text>
+              </Pressable>
+            )}
+          </View>
+
+          {nextUp && (
+            <View style={styles.nextCard}>
+              <View style={styles.nextIco}><Feather name="calendar" size={17} color={C.navy} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nextTitle} numberOfLines={1}>{nextTime} {nextUp.title || 'Meeting'}</Text>
+                <Text style={styles.nextSub}>{nextUp.recording_type === 'video_meeting' ? 'De bot neemt deze meeting automatisch op' : 'Je krijgt 5 minuten vooraf een herinnering'}</Text>
+              </View>
+            </View>
+          )}
+
+          {pending.length > 0 && (
+            <Pressable style={styles.queuePill} onPress={() => setTab('meetings')}>
+              <Feather name="upload-cloud" size={15} color={C.orange} />
+              <Text style={styles.queuePillText}>
+                {pending.length === 1 ? '1 opname wordt verstuurd' : `${pending.length} opnames worden verstuurd`}{progPct !== null ? ` · ${progPct}%` : ''}
+              </Text>
+            </Pressable>
+          )}
+        </>
+      )}
+
+      {message && phase !== 'interrupted' ? <Text style={phase === 'failed' ? styles.error : styles.success}>{message}</Text> : null}
+    </ScrollView>
+  );
+
+  // ── Tab: Meetings ────────────────────────────────────────────────────────
+  const meetingsTab = (
+    <ScrollView contentContainerStyle={styles.tabBody} showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={meetingsBusy} onRefresh={() => { loadMeetings(); runQueue(); }} tintColor={C.navy} />}>
+      {header('Meetings')}
+      {interruptedBanner}
+
+      {pending.length > 0 && (
+        <View style={styles.card}>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <View style={[styles.ico, { backgroundColor: C.orangeSoft }]}><Feather name="upload-cloud" size={17} color={C.orange} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{pending.length === 1 ? 'Wordt verstuurd' : `${pending.length} opnames worden verstuurd`}</Text>
+              <Text style={styles.rowSub} numberOfLines={1}>
+                {pending[0].title || TYPE_LABELS[pending[0].recType]}{progPct !== null ? ` · ${progPct}%` : ''}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.progress}><View style={[styles.progressFill, { width: `${progPct ?? (qState.busy ? 8 : 0)}%` }]} /></View>
+          {!qState.busy && lastError ? <Text style={styles.queueErr}>Laatste fout: {lastError}</Text> : null}
           {pending.filter((g) => g.missingFile).map((g) => (
-            <View key={g.localId} style={{ marginTop: 8 }}>
-              <Text style={styles.queueText}>Opname van {fmtDate(g.startedAt)}: het audiobestand staat niet meer op dit toestel.</Text>
-              <Pressable onPress={() => confirmRemoveGroup(g)}><Text style={styles.link}>Verwijder uit wachtrij</Text></Pressable>
+            <View key={g.localId} style={{ marginTop: 10 }}>
+              <Text style={styles.rowSub}>Opname van {fmtDate(g.startedAt)}: het audiobestand staat niet meer op dit toestel.</Text>
+              <Pressable onPress={() => confirmRemoveGroup(g)}><Text style={styles.linkStrong}>Verwijder uit wachtrij</Text></Pressable>
             </View>
           ))}
-          <Text style={styles.queueHint}>Houd de app open met een goede wifi- of 4G/5G-verbinding tot het versturen klaar is.</Text>
-          <Pressable style={[styles.primary, qState.busy && styles.disabled]} disabled={qState.busy} onPress={() => { runQueue(); }}>
-            <Text style={styles.primaryText}>{qState.busy ? 'Bezig met versturen…' : 'Nu versturen'}</Text>
-          </Pressable>
+          <Text style={styles.hint}>Houd de app open met een goede wifi- of 4G/5G-verbinding tot het versturen klaar is.</Text>
+          {!qState.busy && (
+            <Pressable style={[styles.btnNavySm, { alignSelf: 'flex-start', marginTop: 10 }]} onPress={() => { runQueue(); }}>
+              <Text style={styles.btnSmText}>Nu versturen</Text>
+            </Pressable>
+          )}
         </View>
       )}
 
-      {/* Teruggevonden, nooit verstuurde opnames op dit toestel */}
       {orphans.map((o) => (
-        <View key={o.uri} style={[styles.card, styles.queueCard]}>
-          <Text style={styles.queueTitle}>Onverstuurde opname gevonden</Text>
-          <Text style={styles.queueText}>
+        <View key={o.uri} style={[styles.card, { borderColor: C.orangeLine, backgroundColor: C.orangeSoft }]}>
+          <Text style={styles.rowTitle}>Onverstuurde opname gevonden</Text>
+          <Text style={[styles.rowSub, { marginTop: 4 }]}>
             {o.match
               ? `Opname van ${fmtDate(o.match.started_at)}${o.match.title ? ` („${o.match.title}”)` : ''} · ca. ${Math.max(1, Math.round(o.estDuration / 60))} min · ${fmtMb(o.size)} MB`
               : `Opgeslagen op ${fmtDate(o.modifiedAt)} · ca. ${Math.max(1, Math.round(o.estDuration / 60))} min · ${fmtMb(o.size)} MB`}
           </Text>
-          <Text style={styles.queueHint}>
+          <Text style={styles.hint}>
             {o.match
               ? 'Deze opname is nooit bij ons aangekomen. Versturen of verwijderen?'
-              : 'Niet gekoppeld aan een bekende opname — mogelijk al eerder verstuurd. Versturen of verwijderen?'}
+              : 'Niet gekoppeld aan een bekende opname, mogelijk al eerder verstuurd. Versturen of verwijderen?'}
           </Text>
-          <View style={[styles.row, { marginTop: 4 }]}>
-            <Pressable style={[styles.primary, { flex: 1 }]} onPress={() => sendOrphan(o)}>
-              <Text style={styles.primaryText}>Versturen</Text>
-            </Pressable>
-            <Pressable style={[styles.secondary, { flex: 1, marginTop: 6 }]} onPress={() => deleteOrphan(o)}>
-              <Text style={styles.secondaryText}>Verwijderen</Text>
-            </Pressable>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <Pressable style={[styles.btnOrangeSm, { flex: 1 }]} onPress={() => sendOrphan(o)}><Text style={styles.btnSmText}>Versturen</Text></Pressable>
+            <Pressable style={[styles.btnOutlineSm, { flex: 1 }]} onPress={() => deleteOrphan(o)}><Text style={styles.btnOutlineText}>Verwijderen</Text></Pressable>
           </View>
         </View>
       ))}
 
-      {/* Type-segment */}
-      <View style={styles.segment}>
-        {(Object.keys(TYPE_LABELS) as RecordingType[]).map((t) => (
-          <Pressable key={t} style={[styles.segItem, recType === t && styles.segItemOn]} onPress={() => setRecType(t)}>
-            <Text style={[styles.segText, recType === t && styles.segTextOn]}>{TYPE_LABELS[t].split(' ')[0]}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {meetings.length === 0 && !meetingsBusy ? (
+        <Text style={[styles.hint, { textAlign: 'center', marginTop: 30 }]}>Nog geen meetings. Zodra een opname verwerkt is, verschijnt ze hier.</Text>
+      ) : meetings.map((m) => {
+        const st = m.status === 'transcribed' ? { t: 'Klaar', bg: C.greenTint, c: C.green }
+          : m.status === 'error' ? { t: 'Fout', bg: C.redTint, c: C.red }
+          : m.status === 'pending_upload' ? { t: 'Gepland', bg: C.blueTint, c: C.navy }
+          : { t: 'Bezig', bg: C.orangeSoft, c: '#C25E00' };
+        const icon = m.recording_type === 'in_person' ? 'map-pin' : m.recording_type === 'phone' ? 'phone' : 'video';
+        return (
+          <View key={m.id} style={styles.meetRow}>
+            <View style={[styles.ico, m.recording_type === 'in_person' ? { backgroundColor: C.orangeSoft } : { backgroundColor: C.blueTint }]}>
+              <Feather name={icon as any} size={16} color={m.recording_type === 'in_person' ? C.orange : C.navy} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle} numberOfLines={2}>{m.title || TYPE_LABELS[m.recording_type as RecordingType] || 'Meeting'}</Text>
+              <Text style={styles.rowSub}>{fmtShort(m.started_at)}{m.duration_seconds ? ` · ${Math.max(1, Math.round(m.duration_seconds / 60))} min` : ''}</Text>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: st.bg }]}><Text style={[styles.statusText, { color: st.c }]}>{st.t}</Text></View>
+          </View>
+        );
+      })}
+      <Text style={[styles.hint, { textAlign: 'center', marginTop: 18 }]}>Samenvatting en actiepunten krijg je per mail en vind je op het webportaal.</Text>
+    </ScrollView>
+  );
 
-      {/* Consent + snelstart */}
+  // ── Tab: Instellingen ────────────────────────────────────────────────────
+  const settingsTab = (
+    <ScrollView contentContainerStyle={styles.tabBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {header('Instellingen')}
+
       <View style={styles.card}>
         <View style={styles.row}>
+          <Text style={styles.rowText}>Ik informeer mijn gesprekspartners dat ik opneem (kwaliteit en training).</Text>
           <Switch value={standingConsent} onValueChange={(v) => { setStandingConsent(v); persist('standingConsent', v); }}
-            trackColor={{ true: C.orange }} />
-          <Text style={styles.rowText}>Ik informeer mijn gesprekspartners dat ik opneem (kwaliteit & training).</Text>
+            trackColor={{ true: C.navy, false: '#C9D1DF' }} thumbColor="#fff" />
         </View>
-        <View style={[styles.row, { marginTop: 14 }]}>
+        <View style={styles.divider} />
+        <View style={styles.row}>
+          <Text style={styles.rowText}>Snelstart: één gebaar start meteen een opname.</Text>
           <Switch value={quickStart} onValueChange={(v) => { setQuickStart(v); persist('quickStart', v); }}
-            trackColor={{ true: C.orange }} />
-          <Text style={styles.rowText}>Snelstart aan: één gebaar start meteen een opname.</Text>
+            trackColor={{ true: C.navy, false: '#C9D1DF' }} thumbColor="#fff" />
         </View>
         {quickStart && (
           <Text style={styles.help}>
-            Koppel in iOS → Instellingen → Toegankelijkheid → Aanraken → Tik op achterkant
-            (of de Action Button / Siri) aan een Opdracht "Open URL" met{'\n'}
-            <Text style={{ color: C.ink }}>salesupcapture://record</Text>{'\n'}
-            Dubbeltik dan op de achterkant van je telefoon → de app opent en neemt meteen op.
+            Koppel in iOS bij Instellingen, Toegankelijkheid, Aanraken, Tik op achterkant (of de Action Button of Siri) een Opdracht "Open URL" met{'\n'}
+            <Text style={{ color: C.ink, fontFamily: F.s }}>salesupcapture://record</Text>{'\n'}
+            Dubbeltik dan op de achterkant van je telefoon: de app opent en neemt meteen op.
           </Text>
         )}
       </View>
 
-      {/* Meer opties (klant, agenda, bot, titel) */}
-      <Pressable style={styles.moreToggle} onPress={() => setShowMore((s) => !s)}>
-        <Text style={styles.moreText}>{showMore ? '− Minder opties' : '+ Meer opties'}</Text>
-      </Pressable>
-
-      {showMore && (
-        <View style={styles.card}>
-          {ctx.orgs.length > 1 && (
-            <>
-              <Text style={styles.label}>Klant</Text>
-              <View style={styles.chips}>
-                {ctx.orgs.map((c) => (
-                  <Pressable key={c.id} style={[styles.chip, clientId === c.id && styles.chipOn]} onPress={() => setClientId(c.id)}>
-                    <Text style={[styles.chipText, clientId === c.id && styles.chipTextOn]}>{c.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </>
-          )}
-
-          <Text style={styles.label}>Titel (optioneel)</Text>
-          <TextInput style={styles.input} placeholder="bv. Demo-gesprek Acme NV" placeholderTextColor="#aab0bf"
-            value={title} onChangeText={setTitle} />
-
-          <Pressable style={[styles.secondary, { marginTop: 4 }]} onPress={async () => {
-            try {
-              const { data } = await supabase.auth.getSession();
-              const token = data.session?.access_token ?? session.access_token;
-              const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-oauth`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ action: 'auth_url' }),
-              });
-              const json = await res.json();
-              if (!res.ok || json.ok === false) throw new Error(json.error || `Fout (${res.status})`);
-              await Linking.openURL(json.url);
-            } catch (e: any) { Alert.alert('Agenda verbinden', e.message); }
-          }}>
-            <Text style={styles.secondaryText}>📅 Verbind agenda (Google/Microsoft)</Text>
-          </Pressable>
-
-          <Text style={styles.label}>Of stuur de bot naar een meeting-link</Text>
-          <TextInput style={styles.input} placeholder="Plak de Meet/Zoom/Teams-link" placeholderTextColor="#aab0bf"
+      <Text style={styles.label}>VIDEOCALLS</Text>
+      <View style={styles.card}>
+        <Pressable style={styles.btnOutline} onPress={async () => {
+          try {
+            const { data } = await supabase.auth.getSession();
+            const token = data.session?.access_token ?? session.access_token;
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-oauth`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ action: 'auth_url' }),
+            });
+            const json = await res.json();
+            if (!res.ok || json.ok === false) throw new Error(json.error || `Fout (${res.status})`);
+            await Linking.openURL(json.url);
+          } catch (e: any) { Alert.alert('Agenda verbinden', e.message); }
+        }}>
+          <Feather name="calendar" size={16} color={C.navy} />
+          <Text style={styles.btnOutlineText}>Agenda verbinden (Google of Microsoft)</Text>
+        </Pressable>
+        <Text style={[styles.label, { marginTop: 16 }]}>STUUR DE BOT NAAR EEN MEETING-LINK</Text>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} placeholder="https://teams.microsoft.com/…" placeholderTextColor="#A6AEBD"
             autoCapitalize="none" value={botUrl} onChangeText={setBotUrl} />
-          <Pressable style={[styles.secondary, (botBusy || !botUrl.startsWith('http')) && styles.disabled]}
-            disabled={botBusy || !botUrl.startsWith('http')}
+          <Pressable style={[styles.roundBtn, (botBusy || !botUrl.startsWith('http')) && styles.disabled]}
+            disabled={botBusy || !botUrl.startsWith('http')} accessibilityLabel="Bot sturen"
             onPress={async () => {
               setBotBusy(true);
               try {
                 const { data } = await supabase.auth.getSession();
                 await ingest('bot_start', { meeting_url: botUrl.trim(), org_id: clientId || (ctx.orgs[0] && ctx.orgs[0].id), title: title || null },
                   data.session?.access_token ?? session.access_token);
-                setBotUrl(''); setPhase('done'); setMessage('Bot is onderweg naar je meeting — verslag volgt per mail.');
-              } catch (e: any) { setPhase('failed'); setMessage(`Bot sturen mislukt: ${e.message}`); }
+                setBotUrl('');
+                Alert.alert('Bot onderweg', 'Laat de bot "salesUp Capture" toe in de meeting. Het verslag volgt per mail.');
+              } catch (e: any) { Alert.alert('Bot sturen mislukt', e.message); }
               finally { setBotBusy(false); }
             }}>
-            <Text style={styles.secondaryText}>{botBusy ? 'Bezig…' : '🤖 Stuur bot naar meeting'}</Text>
+            {botBusy ? <ActivityIndicator color="#fff" /> : <Feather name="send" size={16} color="#fff" />}
           </Pressable>
         </View>
-      )}
+      </View>
 
-      {message ? <Text style={phase === 'failed' ? styles.error : styles.success}>{message}</Text> : null}
-      <Pressable style={styles.linkBtn} onPress={() => supabase.auth.signOut()}>
-        <Text style={styles.link}>Uitloggen ({session.user.email})</Text>
-      </Pressable>
+      <Text style={styles.label}>ACCOUNT</Text>
+      <View style={styles.card}>
+        <Text style={styles.rowTitle}>{name}</Text>
+        <Text style={styles.rowSub}>{email}</Text>
+        <Pressable style={[styles.btnOutline, { marginTop: 14 }]} onPress={() => supabase.auth.signOut()}>
+          <Feather name="log-out" size={16} color={C.navy} />
+          <Text style={styles.btnOutlineText}>Uitloggen</Text>
+        </Pressable>
+      </View>
     </ScrollView>
+  );
+
+  const TABS: { key: typeof tab; label: string; icon: any }[] = [
+    { key: 'record', label: 'Opnemen', icon: 'mic' },
+    { key: 'meetings', label: 'Meetings', icon: 'list' },
+    { key: 'settings', label: 'Instellingen', icon: 'sliders' },
+  ];
+  return (
+    <View style={{ flex: 1, backgroundColor: C.surface }}>
+      <StatusBar style="dark" />
+      <View style={{ flex: 1 }}>{tab === 'record' ? recordTab : tab === 'meetings' ? meetingsTab : settingsTab}</View>
+      <View style={styles.tabBar}>
+        {TABS.map((t) => (
+          <Pressable key={t.key} style={styles.tabItem} onPress={() => setTab(t.key)}>
+            <Feather name={t.icon} size={20} color={tab === t.key ? C.orange : '#9AA3B2'} />
+            <Text style={[styles.tabText, tab === t.key && { color: C.orange, fontFamily: F.s }]}>{t.label}</Text>
+            {t.key === 'meetings' && (pending.length > 0 || phase === 'interrupted') ? <View style={styles.tabDot} /> : null}
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg },
+  screen: { flex: 1, backgroundColor: C.surface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  container: { padding: 22, paddingTop: 64, alignItems: 'stretch' },
-  logo: { fontSize: 26, fontWeight: '800', color: C.ink, textAlign: 'center', marginBottom: 6, letterSpacing: -0.4 },
-  subtitle: { color: C.muted, textAlign: 'center', marginBottom: 22 },
+  navyScreen: { flex: 1, backgroundColor: C.navy, overflow: 'hidden' },
 
-  card: { backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.line, padding: 18, marginTop: 14, width: '100%' },
-  input: { backgroundColor: '#fbfcfe', borderWidth: 1, borderColor: C.line, borderRadius: 12, color: C.ink, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 10, fontSize: 15 },
+  // Login
+  loginWrap: { flexGrow: 1, justifyContent: 'space-between', padding: 28, paddingTop: TOP + 40, paddingBottom: 44 },
+  tb: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, transform: [{ rotate: '-2deg' }] },
+  tbOrange: { backgroundColor: C.orange },
+  tbWhite: { backgroundColor: '#fff', marginTop: 2, paddingRight: 34 },
+  tbOrangeText: { color: '#fff', fontFamily: F.k, fontSize: 24, letterSpacing: 0.3 },
+  tbWhiteText: { color: C.navy, fontFamily: F.k, fontSize: 24, lineHeight: 32, letterSpacing: 0.3 },
+  loginSub: { color: '#fff', fontFamily: F.s, fontSize: 15, marginBottom: 12 },
+  loginError: { color: '#FFC2BD', fontFamily: F.m, fontSize: 13, marginBottom: 12, lineHeight: 19 },
+  loginInfo: { color: '#B9F0CF', fontFamily: F.m, fontSize: 13, marginBottom: 12 },
+  darkField: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)', borderRadius: 12, marginBottom: 12 },
+  darkInput: { flex: 1, color: '#fff', fontFamily: F.r, fontSize: 15, paddingHorizontal: 10, paddingVertical: 13 },
+  lightLinkBtn: { marginTop: 18, alignItems: 'center' },
+  lightLink: { color: 'rgba(255,255,255,0.8)', fontFamily: F.r, fontSize: 13 },
 
-  bigRecord: { backgroundColor: C.orange, borderRadius: 24, height: 132, alignItems: 'center', justifyContent: 'center', marginTop: 8,
-    shadowColor: C.orange, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 10 } },
-  bigRecordOff: { backgroundColor: '#f0a888', shadowOpacity: 0.15 },
-  bigRecordDot: { color: '#fff', fontSize: 30, marginBottom: 2 },
-  bigRecordText: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: -0.3 },
-  bigCaption: { textAlign: 'center', color: C.muted, fontSize: 12.5, marginTop: 10 },
-
-  segment: { flexDirection: 'row', backgroundColor: '#e2e6ee', borderRadius: 12, padding: 3, marginTop: 18 },
-  segItem: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center' },
-  segItemOn: { backgroundColor: '#fff' },
-  segText: { color: C.muted, fontSize: 13, fontWeight: '600' },
-  segTextOn: { color: C.ink },
-
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  rowText: { color: C.ink, fontSize: 13, flex: 1, lineHeight: 18 },
-  help: { color: C.muted, fontSize: 12, lineHeight: 18, marginTop: 12, backgroundColor: C.orangeSoft, padding: 12, borderRadius: 10 },
-
-  moreToggle: { alignSelf: 'center', marginTop: 16, padding: 6 },
-  moreText: { color: C.orange, fontWeight: '700', fontSize: 13 },
-
-  label: { color: C.muted, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1, marginTop: 14, marginBottom: 7 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
-  chipOn: { backgroundColor: C.orange, borderColor: C.orange },
-  chipText: { color: C.muted, fontSize: 13 },
-  chipTextOn: { color: '#fff', fontWeight: '600' },
-
-  primary: { backgroundColor: C.orange, borderRadius: 13, paddingVertical: 15, alignItems: 'center', marginTop: 6 },
-  primaryText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  secondary: { backgroundColor: '#fff', borderWidth: 1, borderColor: C.line, borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 10 },
-  secondaryText: { color: C.ink, fontWeight: '600', fontSize: 14 },
-  stop: { backgroundColor: C.red, marginTop: 28, paddingHorizontal: 40 },
+  // Algemene knoppen
+  btnOrange: { backgroundColor: C.orange, borderRadius: 999, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnRed: { backgroundColor: C.red, borderRadius: 999, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnWhite: { backgroundColor: '#fff', borderRadius: 999, paddingVertical: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnText: { color: '#fff', fontFamily: F.s, fontSize: 16 },
+  btnWhiteText: { color: C.navy, fontFamily: F.s, fontSize: 16 },
+  btnOrangeSm: { backgroundColor: C.orange, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  btnNavySm: { backgroundColor: C.navy, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  btnSmText: { color: '#fff', fontFamily: F.s, fontSize: 13 },
+  btnOutline: { borderWidth: 1, borderColor: C.line, borderRadius: 999, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  btnOutlineSm: { borderWidth: 1, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 9, alignItems: 'center', justifyContent: 'center' },
+  btnOutlineText: { color: C.navy, fontFamily: F.s, fontSize: 14 },
+  roundBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.45 },
 
-  recRing: { width: 110, height: 110, borderRadius: 55, backgroundColor: '#fde7e5', alignItems: 'center', justifyContent: 'center', marginBottom: 22 },
-  recCore: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.red },
-  timer: { color: C.ink, fontSize: 60, fontVariant: ['tabular-nums'], fontWeight: '200' },
-  recHint: { color: C.muted, textAlign: 'center', marginTop: 12, lineHeight: 20 },
+  // Kop en tabs
+  tabBody: { paddingHorizontal: 22, paddingBottom: 30 },
+  header: { paddingTop: TOP, marginBottom: 6 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.navyDark, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontFamily: F.s, fontSize: 12 },
+  h1: { fontFamily: F.b, fontSize: 26, color: C.navy, marginTop: 20, marginBottom: 6 },
+  tabBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line, backgroundColor: '#fff', paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 28 : 12 },
+  tabItem: { flex: 1, alignItems: 'center', gap: 3 },
+  tabText: { fontFamily: F.r, fontSize: 11, color: '#9AA3B2' },
+  tabDot: { position: 'absolute', top: -1, right: '32%', width: 8, height: 8, borderRadius: 4, backgroundColor: C.orange },
 
-  queueCard: { borderColor: '#f6c7b3', backgroundColor: C.orangeSoft },
-  queueTitle: { color: C.ink, fontWeight: '700', fontSize: 15 },
-  queueText: { color: C.ink, fontSize: 13, lineHeight: 18, marginTop: 6 },
-  queueErr: { color: C.red, fontSize: 12.5, lineHeight: 18, marginTop: 6 },
-  queueHint: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 8 },
+  // Opnemen
+  label: { fontFamily: F.s, fontSize: 11, letterSpacing: 1, color: C.muted, marginTop: 20, marginBottom: 8 },
+  select: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: C.line, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13 },
+  selectText: { fontFamily: F.r, fontSize: 15, color: C.ink, flex: 1 },
+  pickList: { borderWidth: 1, borderColor: C.line, borderRadius: 12, marginTop: 6, overflow: 'hidden' },
+  pickItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line },
+  pickText: { fontFamily: F.r, fontSize: 14, color: C.ink },
+  segment: { flexDirection: 'row', backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 999, padding: 3, marginTop: 12 },
+  segItem: { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: 'center' },
+  segItemOn: { backgroundColor: C.navy },
+  segText: { color: C.muted, fontFamily: F.s, fontSize: 13 },
+  segTextOn: { color: '#fff' },
+  halo2: { width: 214, height: 214, borderRadius: 107, backgroundColor: 'rgba(239,125,0,0.08)', alignItems: 'center', justifyContent: 'center' },
+  halo1: { width: 182, height: 182, borderRadius: 91, backgroundColor: 'rgba(239,125,0,0.16)', alignItems: 'center', justifyContent: 'center' },
+  micBtn: { width: 150, height: 150, borderRadius: 75, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.orange, shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  micTitle: { fontFamily: F.s, fontSize: 16, color: C.navy, marginTop: 14 },
+  micCaption: { fontFamily: F.r, fontSize: 12.5, color: C.muted, marginTop: 2, textAlign: 'center' },
+  nextCard: { flexDirection: 'row', gap: 12, alignItems: 'center', borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 14, marginTop: 22 },
+  nextIco: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.blueTint, alignItems: 'center', justifyContent: 'center' },
+  nextTitle: { fontFamily: F.s, fontSize: 14, color: C.navyDark },
+  nextSub: { fontFamily: F.r, fontSize: 12, color: C.muted, marginTop: 1 },
+  queuePill: { flexDirection: 'row', gap: 8, alignItems: 'center', alignSelf: 'center', backgroundColor: C.orangeSoft, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginTop: 16 },
+  queuePillText: { fontFamily: F.m, fontSize: 12.5, color: '#9A5B00' },
 
-  error: { color: C.red, marginTop: 16, textAlign: 'center', lineHeight: 19 },
-  success: { color: C.green, marginTop: 16, textAlign: 'center', lineHeight: 19 },
+  // Opnamescherm
+  recWrap: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 28, paddingTop: TOP + 40, paddingBottom: 44 },
+  livePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FDECEC', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 },
+  livePillPaused: { backgroundColor: '#EEF2F8' },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.red },
+  liveText: { fontFamily: F.b, fontSize: 11, color: C.red, letterSpacing: 0.4 },
+  timer: { color: '#fff', fontFamily: F.x, fontSize: 72, letterSpacing: -1, fontVariant: ['tabular-nums'], marginTop: 22 },
+  recSub: { color: 'rgba(255,255,255,0.75)', fontFamily: F.r, fontSize: 14, textAlign: 'center', marginTop: 4, lineHeight: 20 },
+  wave: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 70, marginTop: 40 },
+  waveBar: { width: 3, height: 64, borderRadius: 2, backgroundColor: '#fff' },
+  recNote: { color: 'rgba(255,255,255,0.6)', fontFamily: F.r, fontSize: 12, textAlign: 'center', marginTop: 16 },
+
+  // Kaarten en lijsten
+  card: { backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.line, padding: 16, marginTop: 14 },
+  alertCard: { backgroundColor: C.orangeSoft, borderRadius: 16, borderWidth: 1, borderColor: C.orangeLine, padding: 16, marginTop: 16 },
+  alertTitle: { fontFamily: F.s, fontSize: 14, color: '#8A4A00' },
+  alertText: { fontFamily: F.r, fontSize: 13, color: '#6B4A1F', lineHeight: 19, marginTop: 2 },
+  ico: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { fontFamily: F.s, fontSize: 14, color: C.navyDark },
+  rowSub: { fontFamily: F.r, fontSize: 12, color: C.muted, marginTop: 1 },
+  meetRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.line },
+  statusPill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  statusText: { fontFamily: F.s, fontSize: 11 },
+  progress: { height: 6, borderRadius: 3, backgroundColor: C.line, overflow: 'hidden', marginTop: 12 },
+  progressFill: { height: 6, backgroundColor: C.orange },
+  queueErr: { color: C.red, fontFamily: F.r, fontSize: 12.5, lineHeight: 18, marginTop: 8 },
+  hint: { color: C.muted, fontFamily: F.r, fontSize: 12, lineHeight: 17, marginTop: 8 },
+  help: { color: C.muted, fontFamily: F.r, fontSize: 12, lineHeight: 18, marginTop: 12, backgroundColor: C.orangeSoft, padding: 12, borderRadius: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rowText: { color: C.ink, fontFamily: F.r, fontSize: 13.5, flex: 1, lineHeight: 19 },
+  divider: { height: 1, backgroundColor: C.line, marginVertical: 14 },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: C.line, borderRadius: 12, color: C.ink, fontFamily: F.r,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, fontSize: 14 },
+
+  error: { color: C.red, fontFamily: F.r, marginTop: 16, textAlign: 'center', lineHeight: 19 },
+  success: { color: C.green, fontFamily: F.r, marginTop: 16, textAlign: 'center', lineHeight: 19 },
   linkBtn: { marginTop: 24, alignItems: 'center' },
-  link: { color: C.muted, fontSize: 13, textDecorationLine: 'underline' },
+  link: { color: C.muted, fontFamily: F.r, fontSize: 13, textDecorationLine: 'underline' },
+  linkStrong: { color: C.navy, fontFamily: F.s, fontSize: 13 },
 });

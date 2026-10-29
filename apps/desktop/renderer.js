@@ -15,6 +15,7 @@ let mediaRecorder = null;
 let chunks = [];
 let seconds = 0;
 let timerHandle = null;
+let paused = false;
 let detectedPlatform = null;
 let autoStarted = false;   // opname gestart door meetingdetectie (staande consent)
 let hasRecallSdk = false;  // Recall Desktop SDK aanwezig in de main-process?
@@ -67,6 +68,38 @@ function show(view) {
   ['loginView', 'mainView', 'recView'].forEach((v) => ($(v).style.display = v === view ? 'block' : 'none'));
 }
 
+// Golfvorm tijdens de opname (decoratief) en timer die pauzes overslaat.
+$('recWave').innerHTML = Array.from({ length: 44 }, (_, i) =>
+  `<i style="height:${30 + ((i * 37) % 70)}%;animation-delay:${-((i * 113) % 1100)}ms"></i>`).join('');
+function renderTimer() {
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+  $('timer').textContent = `${mm}:${ss}`;
+}
+function startTimer() {
+  seconds = 0; paused = false;
+  renderTimer();
+  $('timer').style.display = 'block';
+  clearInterval(timerHandle);
+  timerHandle = setInterval(() => { if (!paused) { seconds += 1; renderTimer(); } }, 1000);
+}
+function setPausedUi(p) {
+  paused = p;
+  $('livePill').textContent = p ? 'Gepauzeerd' : 'Opname loopt';
+  $('livePill').classList.toggle('paused', p);
+  $('recWave').classList.toggle('paused', p);
+  $('pauseBtn').querySelector('span').textContent = p ? 'Hervat' : 'Pauze';
+  $('pauseBtn').querySelector('use').setAttribute('href', p ? '#i-play' : '#i-pause');
+}
+function enterRecView(title, canPause) {
+  const client = ctx && ctx.orgs.length > 1 ? $('client').selectedOptions[0]?.textContent : '';
+  $('recSub').textContent = [title, client].filter(Boolean).join(' · ');
+  $('pauseBtn').style.display = canPause ? '' : 'none';
+  setPausedUi(false);
+  setMsg('recMsg', '', '');
+  show('recView');
+}
+
 async function enterMain() {
   ctx = await ingest('context', {});
   $('autorec').checked = localStorage.getItem('capture.autorec') === '1';
@@ -79,6 +112,7 @@ async function enterMain() {
     sel.appendChild(o);
   }
   $('clientWrap').style.display = ctx.orgs.length > 1 ? 'block' : 'none';
+  $('who').textContent = session?.user?.user_metadata?.full_name || session?.user?.email || '';
   show('mainView');
   refreshCalStatus();
 }
@@ -100,22 +134,16 @@ async function startRecording(opts = {}) {
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
   mediaRecorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
   mediaRecorder.start(1000);
-  seconds = 0;
-  $('timer').style.display = 'block';
-  timerHandle = setInterval(() => {
-    seconds += 1;
-    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const ss = String(seconds % 60).padStart(2, '0');
-    $('timer').textContent = `${mm}:${ss}`;
-  }, 1000);
+  startTimer();
   window.capture.setRecordingState('recording');
-  show('recView');
+  enterRecView($('title').value.trim() || (detectedPlatform ? `${detectedPlatform}-meeting` : ''), true);
 }
 
 async function stopAndUpload() {
   clearInterval(timerHandle);
   window.capture.setRecordingState('idle');
   setMsg('recMsg', 'Versturen…', 'ok');
+  $('stopBtn').disabled = true; $('pauseBtn').disabled = true;
 
   await new Promise((resolve) => {
     mediaRecorder.onstop = resolve;
@@ -150,7 +178,7 @@ async function stopAndUpload() {
         ? 'Automatisch gestart bij meetingdetectie; staande consent-instelling actief.'
         : 'Bevestigd in de desktop-app vóór de start van de opname.',
     });
-    setMsg('mainMsg', 'Opname verstuurd — transcriptie en analyse volgen automatisch.', 'ok');
+    setMsg('mainMsg', 'Opname verstuurd. Je krijgt het verslag per mail.', 'ok');
   } catch (e) {
     setMsg('mainMsg', `Versturen mislukt: ${e.message}`, 'err');
   } finally {
@@ -159,9 +187,16 @@ async function stopAndUpload() {
     detectedPlatform = null;
     autoStarted = false;
     $('timer').style.display = 'none';
+    $('stopBtn').disabled = false; $('pauseBtn').disabled = false;
     show('mainView');
   }
 }
+
+$('pauseBtn').addEventListener('click', () => {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  if (mediaRecorder.state === 'recording') { mediaRecorder.pause(); setPausedUi(true); }
+  else if (mediaRecorder.state === 'paused') { mediaRecorder.resume(); setPausedUi(false); }
+});
 
 function setMsg(id, text, cls) {
   const el = $(id);
@@ -189,18 +224,34 @@ async function refreshCalStatus() {
   try {
     const s = await calOAuth('status');
     if (s.connected) {
-      const plat = s.calendar_platform === 'microsoft_outlook' ? 'Microsoft / Outlook' : 'Google';
-      $('calStatus').textContent = `Agenda verbonden via ${plat}${s.calendar_email ? ` (${s.calendar_email})` : ''} ✓ — meetings worden automatisch opgenomen.`;
-      $('calBtn').textContent = '📅 Agenda ontkoppelen';
+      const plat = s.calendar_platform === 'microsoft_outlook' ? 'Outlook' : 'Google';
+      const next = await nextMeeting();
+      $('calStatus').className = 'ok';
+      $('calStatus').innerHTML = '<svg><use href="#i-check"/></svg><span></span>';
+      $('calStatus').querySelector('span').textContent = next
+        ? `Volgende: ${next.title || 'meeting'} · ${new Date(next.started_at).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}`
+        : `Agenda verbonden via ${plat}${s.calendar_email ? ` (${s.calendar_email})` : ''}. De bot komt vanzelf in je videocalls.`;
+      $('calBtn').textContent = 'Agenda ontkoppelen';
       $('calBtn').dataset.connected = '1';
       $('calBtnMs').style.display = 'none';
     } else {
-      $('calStatus').textContent = 'Agenda nog niet verbonden. Kies je agenda:';
-      $('calBtn').textContent = '📅 Verbind Google Agenda';
+      $('calStatus').className = 'muted';
+      $('calStatus').textContent = 'Verbind je agenda, dan komt de bot vanzelf in je geplande videocalls.';
+      $('calBtn').textContent = 'Google Agenda verbinden';
       $('calBtn').dataset.connected = '';
       $('calBtnMs').style.display = '';
     }
   } catch (_) {}
+}
+// Eerstvolgende ingeplande bot-opname uit de agenda (RLS: enkel eigen opnames).
+async function nextMeeting() {
+  try {
+    const token = await freshToken();
+    const q = `select=title,started_at&status=eq.pending_upload&started_at=gt.${encodeURIComponent(new Date().toISOString())}&order=started_at.asc&limit=1`;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/recordings?${q}`, { headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}` } });
+    const rows = await res.json();
+    return Array.isArray(rows) && rows[0] && new Date(rows[0].started_at).toDateString() === new Date().toDateString() ? rows[0] : null;
+  } catch (_) { return null; }
 }
 // calendar-oauth heeft een eigen endpoint; we hergebruiken ingest() niet (andere functie)
 async function calOAuth(action, provider) {
@@ -222,7 +273,7 @@ $('calBtn').addEventListener('click', async () => {
     } else {
       const { url } = await calOAuth('auth_url', 'google');
       await window.capture.openExternal(url);
-      setMsg('mainMsg', 'Het Google-toestemmingsscherm is geopend in je browser. Na "Toestaan" is je agenda verbonden — klik daarna hieronder op Vernieuwen.', 'hint');
+      setMsg('mainMsg', 'Het toestemmingsscherm van Google is geopend in je browser. Na "Toestaan" is je agenda verbonden.', 'hint');
     }
     setTimeout(refreshCalStatus, 1500);
   } catch (e) {
@@ -234,7 +285,7 @@ $('calBtnMs').addEventListener('click', async () => {
   try {
     const { url } = await calOAuth('auth_url', 'microsoft');
     await window.capture.openExternal(url);
-    setMsg('mainMsg', 'Het Microsoft-toestemmingsscherm is geopend in je browser. Na "Toestaan" is je Outlook-agenda verbonden — klik daarna hieronder op Vernieuwen.', 'hint');
+    setMsg('mainMsg', 'Het toestemmingsscherm van Microsoft is geopend in je browser. Na "Toestaan" is je Outlook-agenda verbonden.', 'hint');
     setTimeout(refreshCalStatus, 1500);
   } catch (e) {
     setMsg('mainMsg', e.message, 'err');
@@ -245,7 +296,7 @@ $('calBtnMs').addEventListener('click', async () => {
 $('botBtn').addEventListener('click', async () => {
   const url = $('botUrl').value.trim();
   if (!url.startsWith('http')) {
-    setMsg('mainMsg', 'Plak eerst de volledige meeting-link.', 'err');
+    setMsg('mainMsg', 'Plak eerst de volledige link van de meeting.', 'err');
     return;
   }
   $('botBtn').disabled = true;
@@ -256,7 +307,7 @@ $('botBtn').addEventListener('click', async () => {
       title: $('title').value || null,
     });
     $('botUrl').value = '';
-    setMsg('mainMsg', 'Bot "salesUp Capture" is onderweg naar je meeting — laat hem toe in de wachtruimte als daarom gevraagd wordt. Het verslag volgt automatisch per mail.', 'ok');
+    setMsg('mainMsg', 'De bot "salesUp Capture" is onderweg. Laat hem toe in de wachtruimte als dat gevraagd wordt; het verslag volgt per mail.', 'ok');
   } catch (e) {
     setMsg('mainMsg', `Bot sturen mislukt: ${e.message}`, 'err');
   } finally {
@@ -283,22 +334,16 @@ async function recallBegin() {
   recallSt.recordingId = json.recording_id;
   await window.capture.recallStart({ windowId: recallSt.windowId, uploadToken: json.upload_token });
   recallSt.active = true;
-  seconds = 0;
-  $('timer').style.display = 'block';
-  timerHandle = setInterval(() => {
-    seconds += 1;
-    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const ss = String(seconds % 60).padStart(2, '0');
-    $('timer').textContent = `${mm}:${ss}`;
-  }, 1000);
+  startTimer();
   window.capture.setRecordingState('recording');
-  show('recView');
+  // De Recall SDK neemt systeemaudio op en kent geen pauze.
+  enterRecView($('title').value.trim() || recallSt.title || (detectedPlatform ? `${detectedPlatform}-meeting` : ''), false);
 }
 
 window.capture.onRecallMeetingDetected(({ windowId, platform }) => {
   detectedPlatform = platform;
   recallSt.windowId = windowId;
-  setMsg('hint', `${platform}-meeting gedetecteerd — klaar om op te nemen (systeemaudio).`, 'hint');
+  setMsg('hint', `${platform}-meeting gedetecteerd. Klaar om op te nemen (systeemaudio).`, 'hint');
   if ($('autorec').checked && $('mainView').style.display === 'block' && !recallSt.active) {
     startRecording({ auto: true }).catch((e) => setMsg('mainMsg', e.message, 'err'));
   }
@@ -325,9 +370,9 @@ window.capture.onRecallRecordingEnded(async ({ windowId, segments }) => {
     });
     if (Array.isArray(segments) && segments.length > 0) {
       await ingest('recall_transcript', { recording_id: recallSt.recordingId, segments });
-      setMsg('mainMsg', 'Meeting opgenomen en transcript verstuurd — verslag volgt per mail.', 'ok');
+      setMsg('mainMsg', 'Meeting opgenomen en verstuurd. Het verslag volgt per mail.', 'ok');
     } else {
-      setMsg('mainMsg', 'Meeting opgenomen; geen realtime-transcript ontvangen (verwerking volgt via Recall).', 'hint');
+      setMsg('mainMsg', 'Meeting opgenomen. Het transcript volgt via Recall, daarna krijg je het verslag per mail.', 'hint');
     }
   } catch (e) {
     setMsg('mainMsg', `Verwerken mislukt: ${e.message}`, 'err');
@@ -357,7 +402,7 @@ window.capture.onRecallPermission(({ permission, status }) => {
   const allOk = Object.values(permState).every((s) => s === 'granted');
   setMsg('hint',
     `Permissies: ${parts.join(' · ')}${allOk
-      ? ' — alles in orde, meetings worden automatisch gedetecteerd.'
+      ? '. Alles in orde, meetings worden automatisch gedetecteerd.'
       : '. Klik op de knop hieronder, sta toe wat macOS vraagt, en herstart daarna de app.'}`,
     allOk ? 'hint' : 'err');
   $('permBtn').style.display = allOk ? 'none' : 'block';
@@ -371,7 +416,7 @@ $('permBtn').addEventListener('click', async () => {
   for (const p of missing.length ? missing : ['accessibility', 'screen-capture', 'system-audio', 'microphone']) {
     try { await window.capture.recallRequestPermission({ permission: p }); } catch (_) {}
   }
-  setMsg('hint', 'Permissies aangevraagd — sta ze toe in de macOS-prompts/Systeeminstellingen en herstart daarna de app.', 'hint');
+  setMsg('hint', 'Permissies aangevraagd. Sta ze toe in macOS (Systeeminstellingen) en herstart daarna de app.', 'hint');
 });
 $('logout').addEventListener('click', (e) => {
   e.preventDefault();
@@ -386,7 +431,7 @@ window.capture.onMeetingDetected(({ platform }) => {
 });
 window.capture.onMeetingHint(({ platform }) => {
   detectedPlatform = platform;
-  setMsg('hint', `${platform}-meeting gedetecteerd — klaar om op te nemen.`, 'hint');
+  setMsg('hint', `${platform}-meeting gedetecteerd. Klaar om op te nemen.`, 'hint');
   // volautomatisch: staande autorec-instelling + ingelogd → meteen starten
   if ($('autorec').checked && $('mainView').style.display === 'block') {
     startRecording({ auto: true }).catch(() => {});
@@ -398,7 +443,7 @@ window.capture.onMeetingEnded(() => {
       // automatisch gestart → ook automatisch stoppen en versturen
       stopAndUpload();
     } else {
-      setMsg('recMsg', 'Meeting-app gestopt — vergeet niet op "Stop & verstuur" te klikken.', 'hint');
+      setMsg('recMsg', 'De meeting-app is gesloten. Vergeet niet op "Stop & verstuur" te klikken.', 'hint');
     }
   }
 });

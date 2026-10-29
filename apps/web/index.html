@@ -4,189 +4,695 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>salesUp Capture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
 <style>
-  :root { --bg:#eef1f6; --surface:#fff; --ink:#1a2540; --muted:#6b7488; --line:#e4e8f0; --orange:#FF6B35; --green:#15936b; --red:#c0392b; }
+  /* Huisstijl salesUp (okt 2026): navy, oranje, Poppins. Zelfde schil als het trainingsplatform. */
+  :root {
+    --navy:#193C6C; --navy-dark:#151E35; --orange:#EF7D00; --orange-dark:#C96800; --ink:#1D2433;
+    --muted:#6B7280; --line:#E1E6EF; --bg:#F5F6FA; --tint:#FDF3EA; --blue-tint:#EEF2F8;
+    --green:#15803D; --green-tint:#E8F6EE; --red:#DC2626; --red-tint:#FDECEC;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
-  a { color:var(--orange); }
-  .wrap { max-width:780px; margin:0 auto; padding:28px 18px 60px; }
-  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-  .brand { font-size:22px; font-weight:800; letter-spacing:-.4px; }
-  .brand span { color:var(--orange); }
-  .tag { color:var(--muted); font-size:13px; margin:0 0 22px; }
-  .card { background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:18px 20px; margin-bottom:14px;
-    box-shadow:0 1px 2px rgba(26,37,64,.04),0 10px 30px rgba(26,37,64,.05); }
-  input { width:100%; padding:12px 14px; border:1px solid var(--line); border-radius:12px; font-size:15px; margin-bottom:10px; background:#fbfcfe; }
-  button { background:var(--orange); color:#fff; border:none; border-radius:12px; padding:13px 18px; font-weight:700; font-size:15px; cursor:pointer; }
-  button.sec { background:#fff; color:var(--ink); border:1px solid var(--line); font-weight:600; font-size:13px; padding:9px 14px; }
-  button:disabled { opacity:.5; cursor:default; }
+  html, body { margin:0; }
+  body { font-family:'Poppins',-apple-system,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
+  input, select, textarea, button { font-family:inherit; }
+  a { color:var(--navy); }
+  [hidden] { display:none !important; }
+
+  /* Navy band met diagonale lijnen (zoals de zijbalk van het trainingsplatform) */
+  .su-navy { background:linear-gradient(110deg,var(--navy) 0%,#17305A 55%,var(--navy-dark) 100%); position:relative; overflow:hidden; color:#fff; }
+  .su-navy::before { content:''; position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(115deg,rgba(255,255,255,.035) 0 1px,transparent 1px 34px); }
+  .su-navy > * { position:relative; }
+
+  .topbar { height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 32px; }
+  .brandmark { display:flex; align-items:center; gap:14px; }
+  .brandmark img { height:30px; display:block; }
+  .brandmark .sep { width:1px; height:20px; background:rgba(255,255,255,.3); }
+  .brandmark .app { font-size:14px; font-weight:500; color:#E6ECF5; }
+  .top-actions { display:flex; align-items:center; gap:12px; }
+  .btn-ghost-w { display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(255,255,255,.45); color:#fff; background:transparent;
+    border-radius:999px; padding:7px 16px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; }
+  .btn-ghost-w:hover { background:rgba(255,255,255,.08); }
+  .avatar { width:36px; height:36px; border-radius:50%; background:#fff; color:var(--navy); font-weight:700; font-size:13px;
+    display:flex; align-items:center; justify-content:center; border:none; cursor:pointer; }
+  .menu { position:absolute; right:32px; top:58px; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 12px 30px rgba(21,30,53,.14); padding:6px; min-width:220px; z-index:30; }
+  .menu .who { padding:8px 12px 10px; border-bottom:1px solid var(--line); margin-bottom:4px; font-size:12px; color:var(--muted); }
+  .menu .who b { display:block; color:var(--ink); font-size:13px; }
+  .menu button { width:100%; text-align:left; background:none; border:none; padding:9px 12px; border-radius:8px; font-size:13px; cursor:pointer; color:var(--ink); }
+  .menu button:hover { background:var(--bg); }
+
+  /* Knoppen */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:999px; padding:11px 20px;
+    font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; white-space:nowrap; }
+  .btn svg { width:16px; height:16px; flex:none; }
+  .btn-navy { background:var(--navy); color:#fff; } .btn-navy:hover { background:#14325B; }
+  .btn-orange { background:var(--orange); color:#fff; } .btn-orange:hover { background:var(--orange-dark); }
+  .btn-white { background:#fff; color:var(--ink); border:1px solid var(--line); } .btn-white:hover { border-color:#C9D1DF; }
+  .btn:disabled { opacity:.55; cursor:default; }
+  .btn-sm { padding:7px 14px; font-size:13px; }
+
+  /* Pagina */
+  .page { max-width:1440px; margin:0 auto; padding:30px 32px 48px; }
+  .head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+  .kicker { width:34px; height:4px; border-radius:2px; background:var(--orange); margin-bottom:12px; }
+  h1 { margin:0; font-size:30px; line-height:1.15; font-weight:700; color:var(--navy); letter-spacing:-.3px; }
+  .sub { margin:6px 0 0; font-size:14px; color:var(--muted); }
+  .head-actions { display:flex; gap:10px; flex-wrap:wrap; }
+
+  .card { background:#fff; border:1px solid var(--line); border-radius:16px; }
+  .layout { display:grid; grid-template-columns:400px 1fr; gap:18px; align-items:start; }
+  .layout > *, .detail > *, .two > * { min-width:0; }
+
+  /* Lijst */
+  .list { overflow:hidden; min-height:520px; }
+  .search { padding:14px 16px; border-bottom:1px solid var(--line); }
+  .search label { display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:9px 14px; }
+  .search svg { width:15px; height:15px; color:var(--muted); flex:none; }
+  .search input { border:none; background:transparent; outline:none; font-size:13.5px; width:100%; color:var(--ink); }
+  .items { max-height:calc(100vh - 290px); min-height:440px; overflow:auto; }
+  .item { display:flex; align-items:center; gap:14px; padding:14px 16px; border:0; border-bottom:1px solid var(--line); cursor:pointer;
+    border-left:3px solid transparent; background:none; width:100%; text-align:left; font:inherit; color:inherit; }
+  .item:hover { background:#FAFBFD; }
+  .item.on { background:var(--blue-tint); border-left-color:var(--orange); }
+  .ico { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .ico svg { width:17px; height:17px; }
+  .ico.video, .ico.phone { background:var(--blue-tint); color:var(--navy); }
+  .ico.in_person { background:var(--tint); color:var(--orange); }
+  .item .t { font-weight:600; font-size:14px; color:var(--navy-dark); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .m { font-size:12px; color:var(--muted); margin-top:2px; }
+  .item .grow { flex:1; min-width:0; }
+  .item .chev { width:16px; height:16px; color:#9AA3B2; flex:none; }
+  .empty { padding:48px 24px; text-align:center; color:var(--muted); font-size:14px; }
+
+  /* Detail */
+  .detail { display:grid; gap:18px; }
+  .d-head { padding:20px 22px; }
+  .d-title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  .d-title { margin:0; font-size:20px; font-weight:700; color:var(--navy); }
+  .d-meta { font-size:13px; color:var(--muted); margin-top:2px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 10px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .pill::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .p-ok { background:var(--green-tint); color:var(--green); }
+  .p-wait { background:var(--blue-tint); color:var(--navy); }
+  .p-err { background:var(--red-tint); color:var(--red); }
+
+  .player { margin-top:16px; background:var(--bg); border-radius:12px; padding:12px 16px; display:flex; align-items:center; gap:14px; }
+  .play { width:36px; height:36px; border-radius:50%; background:var(--navy); color:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
+  .play svg { width:15px; height:15px; }
+  .wave { flex:1; min-width:0; height:40px; display:flex; align-items:center; gap:2px; cursor:pointer; overflow:hidden; }
+  .wave i { flex:1; min-width:1px; max-width:4px; border-radius:2px; background:#C9D1DF; }
+  .wave i.done { background:var(--navy); }
+  .ptime { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; flex:none; }
+  .noaudio { margin-top:14px; font-size:12.5px; color:var(--muted); }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .block { padding:20px 22px; }
+  .b-title { display:flex; align-items:center; gap:12px; margin:0 0 14px; font-size:16px; font-weight:600; color:var(--navy-dark); }
+  .b-ico { width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; }
+  .b-ico svg { width:16px; height:16px; }
+  .b-ico.o { background:var(--tint); color:var(--orange); }
+  .b-ico.n { background:var(--blue-tint); color:var(--navy); }
+  .summary { font-size:13.5px; line-height:1.65; white-space:pre-wrap; margin:0; }
+  .acts { list-style:none; margin:0; padding:0; }
+  .acts li { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .acts li:last-child { border-bottom:none; }
+  .acts .ck { width:32px; height:32px; border-radius:9px; background:var(--green-tint); color:var(--green); display:flex; align-items:center; justify-content:center; flex:none; }
+  .acts .ck svg { width:15px; height:15px; }
+  .acts .a { font-weight:600; font-size:13.5px; color:var(--navy-dark); }
+  .acts .o { font-size:12px; color:var(--muted); margin-top:1px; }
   .muted { color:var(--muted); font-size:13px; }
-  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; }
-  .b-ok { background:#e7f6ef; color:var(--green); } .b-wait { background:#eaf0fb; color:#2d63c8; } .b-err { background:#fbeaea; color:var(--red); }
-  .meta { color:var(--muted); font-size:12.5px; margin-top:2px; }
-  .mtitle { font-weight:700; font-size:15px; }
-  h4 { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:16px 0 6px; }
-  .summary { font-size:14px; line-height:1.55; color:#33405c; white-space:pre-wrap; }
-  ul.acts { margin:6px 0 0; padding-left:18px; font-size:13.5px; line-height:1.7; color:#33405c; }
-  details { margin-top:10px; } summary { cursor:pointer; color:var(--orange); font-size:13px; font-weight:600; }
-  pre.tr { white-space:pre-wrap; font-size:12.5px; color:#44506a; background:#f7f8fb; border-radius:10px; padding:12px; max-height:320px; overflow:auto; margin-top:8px; }
-  .toggles { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--line); }
-  .tg { display:flex; align-items:center; gap:8px; font-size:13px; background:#f7f8fb; border:1px solid var(--line); border-radius:10px; padding:8px 12px; cursor:pointer; user-select:none; }
-  .tg input { width:auto; margin:0; }
-  .switchbar { display:flex; gap:8px; margin:18px 0 8px; }
-  .switchbar button { background:#fff; color:var(--muted); border:1px solid var(--line); font-weight:600; font-size:13px; flex:1; }
-  .switchbar button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-  .empty { text-align:center; color:var(--muted); padding:40px 0; }
-  .dl { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
-  #loginView, #appView { display:none; }
-  .err { color:var(--red); font-size:13px; }
+
+  .foot { padding:14px 22px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .toggles { display:flex; flex-direction:column; gap:10px; }
+  .tg { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; font-size:13px; cursor:pointer; user-select:none; }
+  .tg b { font-weight:600; color:var(--navy-dark); }
+  .tg .hint { color:var(--muted); font-size:12.5px; }
+  .switch { position:relative; width:38px; height:22px; flex:none; }
+  .switch input { opacity:0; width:0; height:0; position:absolute; }
+  .switch span { position:absolute; inset:0; background:#C9D1DF; border-radius:999px; transition:background .15s; }
+  .switch span::after { content:''; position:absolute; left:3px; top:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .15s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .switch input:checked + span { background:var(--navy); }
+  .switch input:checked + span::after { transform:translateX(16px); }
+  .switch input:disabled + span { opacity:.5; }
+
+  /* Modals */
+  .overlay { position:fixed; inset:0; background:rgba(21,30,53,.45); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
+  .modal { background:#fff; border-radius:18px; width:100%; max-width:480px; padding:24px; box-shadow:0 24px 60px rgba(21,30,53,.25); max-height:90vh; overflow:auto; }
+  .modal.wide { max-width:760px; }
+  .modal h2 { margin:0 0 4px; font-size:19px; color:var(--navy); }
+  .modal .sub { margin:0 0 18px; font-size:13px; }
+  .fld { display:block; font-size:13px; font-weight:600; color:var(--navy-dark); margin:14px 0 6px; }
+  .inp { width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 14px; font-size:14px; color:var(--ink); background:#fff; outline:none; }
+  .inp:focus { border-color:var(--navy); box-shadow:0 0 0 3px rgba(25,60,108,.12); }
+  .seg { display:flex; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:3px; }
+  .seg button { flex:1; border:none; background:none; border-radius:999px; padding:8px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; }
+  .seg button.on { background:var(--navy); color:#fff; }
+  .m-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px; }
+  .msg { font-size:13px; margin-top:12px; }
+  .msg.err { color:var(--red); } .msg.ok { color:var(--green); }
+  .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:14px; }
+  .progress i { display:block; height:100%; width:0; background:var(--orange); transition:width .2s; }
+  .tr-line { display:grid; grid-template-columns:60px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px; line-height:1.55; }
+  .tr-line .ts { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; padding-top:2px; }
+  .tr-line .sp { font-weight:600; color:var(--navy-dark); font-size:12.5px; }
+  .tr-plain { white-space:pre-wrap; font-size:13.5px; line-height:1.6; }
+
+  /* Uitgelogd: hero + login + downloads */
+  .hero { padding:40px 20px 150px; text-align:center; }
+  .hero img { height:44px; }
+  .blocks { display:inline-flex; flex-direction:column; align-items:center; margin:28px 0 18px; }
+  .tb { font-weight:900; text-transform:uppercase; letter-spacing:.2px; line-height:1; padding:10px 16px; font-size:clamp(24px,4.4vw,40px); }
+  .tb.o { background:var(--orange); color:#fff; transform:rotate(-2deg); }
+  .tb.w { background:#fff; color:var(--navy); transform:rotate(-2deg); margin-top:-2px; }
+  .hero p { margin:0; color:#D5DEEC; font-size:15px; }
+  .lo-wrap { max-width:840px; margin:-110px auto 0; padding:0 16px 48px; position:relative; }
+  .login { max-width:400px; margin:0 auto 22px; padding:26px; box-shadow:0 18px 50px rgba(21,30,53,.12); }
+  .login h2 { margin:0; font-size:22px; color:var(--navy); }
+  .login .sub { margin:2px 0 6px; font-size:13px; }
+  .iconfield { position:relative; }
+  .iconfield svg { position:absolute; left:13px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--muted); }
+  .iconfield .inp { padding-left:38px; }
+  .dls { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .dl { padding:26px 22px 22px; text-align:center; }
+  .dl .os { width:46px; height:46px; border-radius:12px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
+  .dl .os svg { width:22px; height:22px; }
+  .dl h3 { margin:0; font-size:17px; color:var(--navy); }
+  .dl .v { font-size:12px; color:var(--muted); margin:4px 0 16px; }
+  .dl .note { font-size:12px; color:var(--muted); margin-top:12px; }
+  .lo-foot { text-align:center; font-size:12.5px; color:var(--muted); margin-top:22px; }
+
+  @media (max-width:1000px) {
+    .layout { grid-template-columns:1fr; }
+    .items { max-height:none; min-height:0; }
+    .list { min-height:0; }
+    .two { grid-template-columns:1fr; }
+  }
+  @media (max-width:640px) {
+    .topbar { padding:0 16px; }
+    .page { padding:22px 16px 40px; }
+    .menu { right:16px; }
+    .dls { grid-template-columns:1fr; }
+    #dlBtnLabel { display:none; }
+    h1 { font-size:25px; }
+    .wave i:nth-child(2n) { display:none; }
+    .d-title-row { flex-direction:column-reverse; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="brand">sales<span>Up</span> Capture</div>
-    <button id="logoutBtn" class="sec" style="display:none">Uitloggen</button>
-  </header>
-  <p class="tag">Je meetings, transcripties en actiepunten — op één plek.</p>
 
-  <!-- Login -->
-  <div id="loginView">
-    <div class="card">
-      <input id="email" type="email" placeholder="E-mailadres" autocomplete="username" />
-      <input id="password" type="password" placeholder="Wachtwoord" autocomplete="current-password" />
-      <button id="loginBtn" style="width:100%">Inloggen</button>
-      <p id="loginErr" class="err"></p>
-    </div>
-    <div class="card">
-      <div class="mtitle">Desktop-app</div>
-      <div class="muted" style="margin-bottom:12px">Neem je videocalls automatisch op.</div>
-      <div class="dl" style="gap:10px;flex-wrap:wrap">
-        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Mac (Apple Silicon)</button></a>
-        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-Setup-0.1.0.exe"><button>⬇︎ Windows</button></a>
-      </div>
-      <p class="muted" style="margin-top:12px">
-        <b>Mac</b>, eerste keer: rechterklik op de app → <b>Open</b> (de app is nog niet Apple-genotariseerd).<br>
-        <b>Windows</b>: bij de SmartScreen-melding → <b>Meer info → Toch uitvoeren</b>.
-      </p>
-    </div>
+<!-- Iconen (lucide-stijl) -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 15.5A2 2 0 0 0 8.5 14l-6.1-1.6a.5.5 0 0 1 0-1L8.5 9.9A2 2 0 0 0 9.9 8.5l1.6-6.1a.5.5 0 0 1 1 0l1.6 6.1a2 2 0 0 0 1.4 1.4l6.1 1.6a.5.5 0 0 1 0 1L15.5 14a2 2 0 0 0-1.4 1.4l-1.6 6.1a.5.5 0 0 1-1 0z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13H8M16 17H8"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7a4.5 4.5 0 0 0-3.6-1.9c-1.5-.2-3 .9-3.7.9-.8 0-2-.9-3.2-.9a4.8 4.8 0 0 0-4 2.4c-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8s1.9.8 3.2.8c1.3 0 2.1-1.2 2.9-2.4a10 10 0 0 0 1.3-2.7 4.2 4.2 0 0 1-2.3-3.9M14 5.5A4.2 4.2 0 0 0 15 2.4a4.4 4.4 0 0 0-2.8 1.5 4 4 0 0 0-1 3 3.6 3.6 0 0 0 2.8-1.4"/></symbol>
+  <symbol id="i-windows" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10 4.5v7H3zM11 4.4 21 3v8.5H11zM3 12.5h7v7l-7-1zM11 12.5h10V21l-10-1.4z"/></symbol>
+</svg>
+
+<!-- Uitgelogd -->
+<div id="loginView" hidden>
+  <div class="su-navy hero">
+    <img src="brand/logo-wit.png" alt="salesUp" />
+    <div><div class="blocks"><span class="tb o">Neem je videocalls</span><span class="tb w">automatisch op</span></div></div>
+    <p>salesUp Capture zet je meetings om in een verslag met actiepunten.</p>
   </div>
-
-  <!-- App -->
-  <div id="appView">
-    <div class="switchbar">
-      <button id="tabMeetings" class="on">Mijn meetings</button>
-      <button id="tabDownload">Desktop-app</button>
-    </div>
-    <div id="meetingsPane">
-      <div id="meetingsList"><p class="empty">Laden…</p></div>
-    </div>
-    <div id="downloadPane" style="display:none">
-      <div class="card dl">
-        <div><div class="mtitle">salesUp Capture voor Mac</div><div class="muted">Apple Silicon · v0.1.0 · eerste keer: rechterklik → Open</div></div>
-        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg"><button>⬇︎ Download</button></a>
-      </div>
-      <div class="card dl">
-        <div><div class="mtitle">salesUp Capture voor Windows</div><div class="muted">v0.1.0 · bij SmartScreen: Meer info → Toch uitvoeren</div></div>
-        <a href="https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-Setup-0.1.0.exe"><button>⬇︎ Download</button></a>
-      </div>
-      <p class="muted">Inloggen in de app gebeurt met ditzelfde account.</p>
-    </div>
+  <div class="lo-wrap">
+    <form class="card login" id="loginForm">
+      <div class="kicker"></div>
+      <h2>Inloggen</h2>
+      <p class="sub muted">Met je salesUp-account.</p>
+      <label class="fld" for="email">E-mailadres</label>
+      <div class="iconfield"><svg><use href="#i-mail"/></svg><input class="inp" id="email" type="email" autocomplete="username" required /></div>
+      <label class="fld" for="password">Wachtwoord</label>
+      <div class="iconfield"><svg><use href="#i-lock"/></svg><input class="inp" id="password" type="password" autocomplete="current-password" required /></div>
+      <button class="btn btn-navy" id="loginBtn" type="submit" style="width:100%;margin-top:18px">Inloggen</button>
+      <p class="msg err" id="loginErr"></p>
+      <p class="muted" style="text-align:center;margin:10px 0 0;font-size:12.5px">Je gebruikt hetzelfde wachtwoord als op het trainingsplatform.</p>
+    </form>
+    <div class="dls" id="dlCards"></div>
+    <p class="lo-foot">Inloggen in de app gebeurt met je salesUp-account. De mobiele app vind je in de App Store en Google Play.</p>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Ingelogd -->
+<div id="appView" hidden>
+  <header class="su-navy topbar">
+    <div class="brandmark"><img src="brand/logo-wit.png" alt="salesUp" /><span class="sep"></span><span class="app">Capture</span></div>
+    <div class="top-actions">
+      <button class="btn-ghost-w" id="dlBtn" type="button"><svg width="15" height="15"><use href="#i-download"/></svg><span id="dlBtnLabel">Desktop-app</span></button>
+      <button class="avatar" id="avatarBtn" type="button" aria-label="Account"></button>
+    </div>
+    <div class="menu" id="menu" hidden>
+      <div class="who"><b id="whoName"></b><span id="whoMail"></span></div>
+      <button type="button" id="logoutBtn">Uitloggen</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="head">
+      <div>
+        <div class="kicker"></div>
+        <h1>Mijn meetings</h1>
+        <p class="sub">Je meetings, transcripties en actiepunten op één plek.</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn-white" id="botBtn" type="button"><svg><use href="#i-video"/></svg>Bot naar een meeting sturen</button>
+        <button class="btn btn-navy" id="uploadBtn" type="button"><svg><use href="#i-upload"/></svg>Opname uploaden</button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <section class="card list">
+        <div class="search"><label><svg><use href="#i-search"/></svg><input id="q" type="search" placeholder="Zoek in meetings" /></label></div>
+        <div class="items" id="items"><p class="empty">Laden…</p></div>
+      </section>
+      <section class="detail" id="detail"></section>
+    </div>
+  </main>
+</div>
+
+<!-- Modals -->
+<div class="overlay" id="botModal" hidden>
+  <form class="modal" id="botForm">
+    <h2>Bot naar een meeting sturen</h2>
+    <p class="sub muted">De zichtbare bot "salesUp Capture" komt de meeting binnen en neemt op. Na afloop krijg je het verslag per mail.</p>
+    <div id="botOrgWrap" hidden><label class="fld" for="botOrg">Klant</label><select class="inp" id="botOrg"></select></div>
+    <label class="fld" for="botUrl">Link van de meeting</label>
+    <input class="inp" id="botUrl" type="url" placeholder="https://teams.microsoft.com/…" required />
+    <label class="fld" for="botTitle">Titel (optioneel)</label>
+    <input class="inp" id="botTitle" type="text" placeholder="Bv. kennismaking" maxlength="140" />
+    <p class="msg" id="botMsg"></p>
+    <div class="m-actions"><button class="btn btn-white" type="button" data-close>Annuleren</button><button class="btn btn-orange" id="botSend" type="submit">Bot sturen</button></div>
+  </form>
+</div>
+
+<div class="overlay" id="upModal" hidden>
+  <form class="modal" id="upForm">
+    <h2>Opname uploaden</h2>
+    <p class="sub muted">Audio of video van een gesprek (mp3, m4a, wav, mp4, webm of ogg). Je krijgt binnen een kwartier het verslag per mail.</p>
+    <div id="upOrgWrap" hidden><label class="fld" for="upOrg">Klant</label><select class="inp" id="upOrg"></select></div>
+    <label class="fld">Soort gesprek</label>
+    <div class="seg" id="upType"><button type="button" data-v="in_person" class="on">Fysiek</button><button type="button" data-v="video_meeting">Videocall</button></div>
+    <label class="fld" for="upTitle">Titel (optioneel)</label>
+    <input class="inp" id="upTitle" type="text" placeholder="Bv. schatting appartement" maxlength="140" />
+    <label class="fld" for="upFile">Bestand</label>
+    <input class="inp" id="upFile" type="file" accept=".mp3,.m4a,.wav,.mp4,.webm,.ogg,.aac,audio/*,video/mp4,video/webm" required />
+    <div class="progress" id="upProg" hidden><i></i></div>
+    <p class="msg" id="upMsg"></p>
+    <div class="m-actions"><button class="btn btn-white" type="button" data-close>Sluiten</button><button class="btn btn-navy" id="upSend" type="submit">Uploaden</button></div>
+  </form>
+</div>
+
+<div class="overlay" id="dlModal" hidden>
+  <div class="modal wide">
+    <h2>Desktop-app</h2>
+    <p class="sub muted">Neemt je videocalls op zonder bot, vanuit de menubalk. Inloggen met hetzelfde account.</p>
+    <div class="dls" id="dlCardsModal"></div>
+    <div class="m-actions"><button class="btn btn-white" type="button" data-close>Sluiten</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="trModal" hidden>
+  <div class="modal wide">
+    <h2 id="trTitle">Transcript</h2>
+    <p class="sub muted" id="trMeta"></p>
+    <div id="trBody"></div>
+    <div class="m-actions"><button class="btn btn-white" type="button" data-close>Sluiten</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js"></script>
 <script>
 const SUPABASE_URL = 'https://plbuczbxtauhuobkicdr.supabase.co';
+// Publieke anon-key (geen geheim): toegang loopt via RLS en de eigenaarschecks in de edge functions.
 const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYnVjemJ4dGF1aHVvYmtpY2RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjA1NTcsImV4cCI6MjA5NjczNjU1N30.5hIzTuUvHYYxfnGxjM0IZmOxLwB0pDlo9_HCTsVcO-I';
+const DL = {
+  mac: 'https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-0.1.0-arm64.dmg',
+  win: 'https://github.com/Up-Belgium/salesup-capture-downloads/releases/download/v0.1.0/salesUp-Capture-Setup-0.1.0.exe',
+  version: 'v0.1.0',
+};
 const sb = supabase.createClient(SUPABASE_URL, ANON);
 const $ = (id) => document.getElementById(id);
 
 const STATUS = {
-  pending_upload:['In wachtrij','b-wait'], uploaded:['In verwerking','b-wait'],
-  transcribing:['Transcriberen…','b-wait'], transcribed:['Klaar','b-ok'],
-  error:['Fout','b-err'], purged:['Gewist','b-wait'],
+  pending_upload: ['Wacht op opname', 'p-wait'], uploaded: ['In verwerking', 'p-wait'],
+  transcribing: ['Transcriberen', 'p-wait'], transcribed: ['Verwerkt', 'p-ok'],
+  error: ['Fout', 'p-err'], purged: ['Gewist', 'p-wait'],
 };
-function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function fmtDate(iso){ try { return new Date(iso).toLocaleString('nl-BE',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); } catch { return iso; } }
-function fmtDur(s){ return s? Math.round(s/60)+' min' : ''; }
-function one(x){ return Array.isArray(x) ? x[0] : x; }
+const PLATFORM = { google_meet: 'Google Meet', zoom: 'Zoom', teams: 'Teams', webex: 'Webex' };
 
-async function show(view){
-  $('loginView').style.display = view==='login'?'block':'none';
-  $('appView').style.display = view==='app'?'block':'none';
-  $('logoutBtn').style.display = view==='app'?'inline-block':'none';
+let all = [], selected = null, ctx = null, audio = null;
+
+function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function one(x) { return Array.isArray(x) ? x[0] : x; }
+function fmtShort(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' }).replace('.', '') + ' · ' + d.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' });
 }
+function fmtLong(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('nl-BE', { day: 'numeric', month: 'long' }) + ' ' + d.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' });
+}
+function mins(s) { return s ? Math.max(1, Math.round(s / 60)) + ' min' : ''; }
+function clock(s) { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function kind(r) { return r.recording_type === 'in_person' ? 'in_person' : r.recording_type === 'phone' ? 'phone' : 'video'; }
+function kindLabel(r) {
+  if (r.recording_type === 'in_person') return 'Fysiek gesprek';
+  if (r.recording_type === 'phone') return 'Telefoon';
+  return 'Videocall' + (PLATFORM[r.meeting_platform] ? ' ' + PLATFORM[r.meeting_platform] : '');
+}
+const ICON = { video: 'i-video', in_person: 'i-pin', phone: 'i-phone' };
 
-async function loadMeetings(){
+function show(view) { $('loginView').hidden = view !== 'login'; $('appView').hidden = view !== 'app'; }
+
+function dlCards() {
+  return `
+    <div class="card dl"><div class="os"><svg><use href="#i-apple"/></svg></div><h3>salesUp Capture voor Mac</h3><div class="v">Apple Silicon · ${DL.version}</div>
+      <a class="btn btn-orange" href="${DL.mac}"><svg><use href="#i-download"/></svg>Downloaden</a><div class="note">Eerste keer: rechterklik en kies Open</div></div>
+    <div class="card dl"><div class="os"><svg><use href="#i-windows"/></svg></div><h3>salesUp Capture voor Windows</h3><div class="v">Windows 10 en 11 · ${DL.version}</div>
+      <a class="btn btn-navy" href="${DL.win}"><svg><use href="#i-download"/></svg>Downloaden</a><div class="note">Bij SmartScreen: Meer info, daarna Toch uitvoeren</div></div>`;
+}
+$('dlCards').innerHTML = dlCards();
+$('dlCardsModal').innerHTML = dlCards();
+
+// ── Lijst ──────────────────────────────────────────────────────────────────
+async function loadList() {
   const { data, error } = await sb.from('recordings')
-    .select('id,title,meeting_platform,recording_type,started_at,duration_seconds,status,marked_internal,share_to_training,bridged_at, transcripts(full_text,segments,word_count), summaries(summary,action_items,email_sent_at)')
-    .order('started_at',{ascending:false});
-  const list = $('meetingsList');
-  if (error){ list.innerHTML = '<p class="empty">Kon meetings niet laden: '+esc(error.message)+'</p>'; return; }
-  if (!data || data.length===0){ list.innerHTML = '<p class="empty">Nog geen meetings. Zodra een opname verwerkt is, verschijnt ze hier.</p>'; return; }
-  list.innerHTML = data.map(renderCard).join('');
+    .select('id,title,meeting_platform,recording_type,started_at,duration_seconds,status,marked_internal,share_to_training,bridged_at')
+    .neq('status', 'cancelled')
+    .lte('started_at', new Date(Date.now() + 15 * 60000).toISOString())
+    .order('started_at', { ascending: false })
+    .limit(200);
+  if (error) { $('items').innerHTML = `<p class="empty">Kon meetings niet laden: ${esc(error.message)}</p>`; return; }
+  all = data || [];
+  renderList();
+  const keep = selected && all.find((r) => r.id === selected);
+  if (all.length && !keep) select(all[0].id);
+  if (!all.length) $('detail').innerHTML = '';
 }
 
-function renderCard(r){
-  const t = one(r.transcripts) || {}; const s = one(r.summaries) || {};
-  const [lbl,cls] = STATUS[r.status] || [r.status,'b-wait'];
+function renderList() {
+  const q = $('q').value.trim().toLowerCase();
+  const rows = q ? all.filter((r) => (r.title || '').toLowerCase().includes(q) || kindLabel(r).toLowerCase().includes(q)) : all;
+  if (!all.length) { $('items').innerHTML = '<p class="empty">Nog geen meetings. Zodra een opname verwerkt is, verschijnt ze hier.</p>'; return; }
+  if (!rows.length) { $('items').innerHTML = '<p class="empty">Geen meetings gevonden.</p>'; return; }
+  $('items').innerHTML = rows.map((r) => `
+    <button type="button" class="item ${r.id === selected ? 'on' : ''}" data-id="${r.id}">
+      <span class="ico ${kind(r)}"><svg><use href="#${ICON[kind(r)]}"/></svg></span>
+      <span class="grow"><div class="t">${esc(r.title || 'Naamloze meeting')}</div><div class="m">${fmtShort(r.started_at)}${r.duration_seconds ? ' · ' + mins(r.duration_seconds) : ''}</div></span>
+      <svg class="chev"><use href="#i-chev"/></svg>
+    </button>`).join('');
+}
+
+$('items').addEventListener('click', (e) => {
+  const b = e.target.closest('.item');
+  if (!b) return;
+  select(b.dataset.id);
+  if (window.innerWidth < 1000) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('q').addEventListener('input', renderList);
+
+// ── Detail ─────────────────────────────────────────────────────────────────
+function waveBars(id, n = 120) {
+  // Decoratieve golfvorm, vast per opname (geen echte audio-analyse nodig).
+  let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const out = [];
+  for (let i = 0; i < n; i++) { h = (h * 1103515245 + 12345) >>> 0; out.push(25 + (h % 75)); }
+  return out;
+}
+
+async function select(id) {
+  selected = id;
+  renderList();
+  if (audio) { audio.pause(); audio = null; }
+  const base = all.find((r) => r.id === id);
+  $('detail').innerHTML = `<div class="card d-head"><p class="muted">Laden…</p></div>`;
+  const { data: r } = await sb.from('recordings')
+    .select('id,title,meeting_platform,recording_type,started_at,duration_seconds,status,marked_internal,share_to_training,bridged_at, transcripts(full_text,segments,word_count), summaries(summary,action_items)')
+    .eq('id', id).maybeSingle();
+  if (selected !== id) return;
+  renderDetail(r || base);
+  loadAudio(id);
+}
+
+function renderDetail(r) {
+  const t = one(r.transcripts) || {}, s = one(r.summaries) || {};
+  const [lbl, cls] = STATUS[r.status] || [r.status, 'p-wait'];
   const acts = Array.isArray(s.action_items) ? s.action_items : [];
-  const platform = ({google_meet:'Google Meet',zoom:'Zoom',teams:'Teams',webex:'Webex'})[r.meeting_platform] || (r.recording_type==='in_person'?'Fysiek':r.recording_type==='phone'?'Telefoon':'Meeting');
-  return `<div class="card" data-id="${r.id}">
-    <div class="row">
-      <div><div class="mtitle">${esc(r.title||'Naamloze meeting')}</div>
-        <div class="meta">${platform} · ${fmtDate(r.started_at)}${r.duration_seconds?(' · '+fmtDur(r.duration_seconds)):''}</div></div>
-      <span class="badge ${cls}">${lbl}</span>
+  const bars = waveBars(r.id).map((h) => `<i style="height:${h}%"></i>`).join('');
+  $('detail').innerHTML = `
+    <div class="card d-head">
+      <div class="d-title-row">
+        <div><h2 class="d-title">${esc(r.title || 'Naamloze meeting')}</h2>
+          <div class="d-meta">${kindLabel(r)} · ${fmtLong(r.started_at)}${r.duration_seconds ? ' · ' + mins(r.duration_seconds).replace('min', 'minuten') : ''}</div></div>
+        <span class="pill ${cls}">${lbl}</span>
+      </div>
+      <div id="playerSlot"><div class="player" id="player" hidden>
+        <button class="play" id="playBtn" type="button" aria-label="Afspelen"><svg><use href="#i-play"/></svg></button>
+        <div class="wave" id="wave">${bars}</div>
+        <span class="ptime" id="ptime">0:00${r.duration_seconds ? ' / ' + clock(r.duration_seconds) : ''}</span>
+      </div></div>
     </div>
-    ${s.summary?`<h4>Samenvatting</h4><div class="summary">${esc(s.summary)}</div>`:''}
-    ${acts.length?`<h4>Actiepunten</h4><ul class="acts">${acts.map(a=>`<li>${esc(a.actie||a.action||'')}${a.eigenaar?(' — '+esc(a.eigenaar)):''}${a.deadline?(' <em>('+esc(a.deadline)+')</em>'):''}</li>`).join('')}</ul>`:''}
-    ${t.full_text?`<details><summary>Volledig transcript${t.word_count?(' ('+t.word_count+' woorden)'):''}</summary><pre class="tr">${esc(t.full_text)}</pre></details>`:''}
-    <div class="toggles">
-      <label class="tg"><input type="checkbox" data-f="marked_internal" ${r.marked_internal?'checked':''}/> Interne meeting</label>
-      <label class="tg"><input type="checkbox" data-f="share_to_training" ${r.share_to_training?'checked':''}/> Naar trainingsplatform${r.bridged_at?' ✓':''}</label>
+    <div class="two">
+      <div class="card block">
+        <p class="b-title"><span class="b-ico o"><svg><use href="#i-spark"/></svg></span>Samenvatting</p>
+        ${s.summary ? `<p class="summary">${esc(s.summary)}</p>` : `<p class="muted">${r.status === 'transcribed' ? 'Geen samenvatting beschikbaar.' : 'De samenvatting verschijnt zodra de opname verwerkt is.'}</p>`}
+      </div>
+      <div class="card block">
+        <p class="b-title"><span class="b-ico n"><svg><use href="#i-check"/></svg></span>Actiepunten</p>
+        ${acts.length ? `<ul class="acts">${acts.map((a) => `<li><span class="ck"><svg><use href="#i-check"/></svg></span><div>
+          <div class="a">${esc(a.actie || a.action || '')}</div>
+          ${(a.eigenaar || a.deadline) ? `<div class="o">${esc([a.eigenaar, a.deadline].filter(Boolean).join(' · '))}</div>` : ''}</div></li>`).join('')}</ul>`
+          : '<p class="muted">Geen actiepunten.</p>'}
+      </div>
     </div>
-  </div>`;
+    <div class="card foot">
+      <div class="toggles">
+        <label class="tg"><span class="switch"><input type="checkbox" data-f="share_to_training" ${r.share_to_training ? 'checked' : ''} ${r.marked_internal ? 'disabled' : ''}/><span></span></span>
+          <b>Delen met training</b><span class="hint">${r.bridged_at ? 'Gedeeld. ' : ''}Telt mee voor scoring en coaching op het trainingsplatform.</span></label>
+        <label class="tg"><span class="switch"><input type="checkbox" data-f="marked_internal" ${r.marked_internal ? 'checked' : ''}/><span></span></span>
+          <b>Interne meeting</b><span class="hint">Wordt nooit gedeeld.</span></label>
+      </div>
+      ${t.full_text || (Array.isArray(t.segments) && t.segments.length) ? '<button class="btn btn-white btn-sm" id="trBtn" type="button"><svg><use href="#i-file"/></svg>Transcript</button>' : ''}
+    </div>`;
+  const trBtn = $('trBtn');
+  if (trBtn) trBtn.onclick = () => openTranscript(r, t);
 }
 
-async function setPref(recId, field, value){
-  const { data:{ session } } = await sb.auth.getSession();
+async function loadAudio(id) {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/recording-audio`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ recording_id: id }),
+    });
+    const j = await res.json();
+    if (selected !== id || !j.url) return;
+    audio = new Audio(j.url);
+    audio.preload = 'metadata';
+    $('player').hidden = false;
+    const bars = [...document.querySelectorAll('#wave i')];
+    const paint = () => {
+      const d = audio.duration || 0, c = audio.currentTime || 0;
+      const k = d ? Math.round((c / d) * bars.length) : 0;
+      bars.forEach((b, i) => b.classList.toggle('done', i < k));
+      $('ptime').textContent = clock(c) + (d ? ' / ' + clock(d) : '');
+    };
+    audio.addEventListener('timeupdate', paint);
+    audio.addEventListener('loadedmetadata', paint);
+    audio.addEventListener('play', () => { $('playBtn').innerHTML = '<svg><use href="#i-pause"/></svg>'; });
+    audio.addEventListener('pause', () => { $('playBtn').innerHTML = '<svg><use href="#i-play"/></svg>'; });
+    $('playBtn').onclick = () => (audio.paused ? audio.play() : audio.pause());
+    $('wave').onclick = (e) => {
+      const box = e.currentTarget.getBoundingClientRect();
+      if (audio.duration) { audio.currentTime = ((e.clientX - box.left) / box.width) * audio.duration; if (audio.paused) audio.play(); }
+    };
+  } catch { /* geen audio: speler blijft verborgen */ }
+}
+
+function openTranscript(r, t) {
+  $('trTitle').textContent = r.title || 'Transcript';
+  $('trMeta').textContent = `${kindLabel(r)} · ${fmtLong(r.started_at)}${t.word_count ? ' · ' + t.word_count + ' woorden' : ''}`;
+  const segs = Array.isArray(t.segments) ? t.segments.filter((x) => x && x.text) : [];
+  $('trBody').innerHTML = segs.length
+    ? segs.map((x) => `<div class="tr-line"><span class="ts">${clock(x.start_s)}</span><div>${x.speaker ? `<div class="sp">${esc(x.speaker)}</div>` : ''}${esc(x.text)}</div></div>`).join('')
+    : `<div class="tr-plain">${esc(t.full_text || '')}</div>`;
+  $('trModal').hidden = false;
+}
+
+// ── Voorkeuren (delen / intern) ────────────────────────────────────────────
+async function setPref(recId, field, value) {
+  const { data: { session } } = await sb.auth.getSession();
   const res = await fetch(`${SUPABASE_URL}/functions/v1/recording-prefs`, {
-    method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session.access_token}`},
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ recording_id: recId, [field]: value }),
   });
-  const j = await res.json();
-  if (!res.ok || j.ok===false) { alert('Kon niet opslaan: '+(j.error||res.status)); return false; }
-  return true;
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.ok === false) { alert('Kon niet opslaan: ' + (j.error || res.status)); return null; }
+  return j;
 }
 
-document.addEventListener('change', async (e)=>{
-  const inp = e.target;
-  if (inp.matches('input[data-f]')){
-    const card = inp.closest('.card'); const id = card.getAttribute('data-id'); const field = inp.getAttribute('data-f');
-    inp.disabled = true;
-    const ok = await setPref(id, field, inp.checked);
-    inp.disabled = false;
-    if (!ok) inp.checked = !inp.checked;
-    // interne meeting aanvinken → doorsturen automatisch uit
-    if (ok && field==='marked_internal' && inp.checked){
-      const share = card.querySelector('input[data-f="share_to_training"]'); if (share) share.checked = false;
-    }
-  }
+$('detail').addEventListener('change', async (e) => {
+  const inp = e.target.closest('input[data-f]');
+  if (!inp || !selected) return;
+  const field = inp.dataset.f;
+  inp.disabled = true;
+  const j = await setPref(selected, field, inp.checked);
+  inp.disabled = false;
+  if (!j) { inp.checked = !inp.checked; return; }
+  const row = all.find((r) => r.id === selected);
+  if (row) Object.assign(row, { marked_internal: j.marked_internal ?? row.marked_internal, share_to_training: j.share_to_training ?? row.share_to_training });
+  const share = document.querySelector('input[data-f="share_to_training"]');
+  if (field === 'marked_internal' && share) { share.disabled = inp.checked; if (inp.checked) share.checked = false; }
 });
 
-$('loginBtn').addEventListener('click', async ()=>{
-  $('loginErr').textContent='';
-  const { error } = await sb.auth.signInWithPassword({ email:$('email').value.trim(), password:$('password').value });
-  if (error) $('loginErr').textContent = 'Inloggen mislukt — controleer e-mail en wachtwoord.';
-});
-$('logoutBtn').addEventListener('click', ()=> sb.auth.signOut());
-$('tabMeetings').addEventListener('click', ()=>{ $('tabMeetings').classList.add('on'); $('tabDownload').classList.remove('on'); $('meetingsPane').style.display='block'; $('downloadPane').style.display='none'; });
-$('tabDownload').addEventListener('click', ()=>{ $('tabDownload').classList.add('on'); $('tabMeetings').classList.remove('on'); $('downloadPane').style.display='block'; $('meetingsPane').style.display='none'; });
+// ── Context (klanten) voor upload en bot ──────────────────────────────────
+async function ingest(body) {
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/ingest-recording`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify(body),
+  });
+  const j = await res.json().catch(() => ({ ok: false, error: 'onverwacht antwoord' }));
+  if (!res.ok || j.ok === false) throw new Error(j.error || 'HTTP ' + res.status);
+  return j;
+}
+async function loadContext() {
+  if (ctx) return ctx;
+  ctx = await ingest({ action: 'context' });
+  const opts = (ctx.orgs || []).map((o) => `<option value="${o.id}">${esc(o.name)}</option>`).join('');
+  for (const k of ['bot', 'up']) { $(k + 'Org').innerHTML = opts; $(k + 'OrgWrap').hidden = (ctx.orgs || []).length < 2; }
+  return ctx;
+}
 
-sb.auth.onAuthStateChange((_e, session)=>{ if (session){ show('app'); loadMeetings(); } else { show('login'); } });
-sb.auth.getSession().then(({data})=>{ if (data.session){ show('app'); loadMeetings(); } else { show('login'); } });
+// ── Bot sturen ─────────────────────────────────────────────────────────────
+$('botBtn').onclick = async () => {
+  $('botMsg').textContent = ''; $('botMsg').className = 'msg'; $('botModal').hidden = false; $('botUrl').focus();
+  try { await loadContext(); } catch (e) { $('botMsg').textContent = 'Kon je account niet laden: ' + e.message; $('botMsg').className = 'msg err'; }
+};
+$('botForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('botSend').disabled = true; $('botMsg').className = 'msg'; $('botMsg').textContent = 'Bot wordt gestuurd…';
+  try {
+    await ingest({ action: 'bot_start', meeting_url: $('botUrl').value.trim(), title: $('botTitle').value.trim() || null, org_id: $('botOrg').value || undefined });
+    $('botMsg').textContent = 'De bot is onderweg. Laat hem toe in de meeting.'; $('botMsg').className = 'msg ok';
+    $('botUrl').value = ''; $('botTitle').value = '';
+    loadList();
+  } catch (err) { $('botMsg').textContent = 'Lukte niet: ' + err.message; $('botMsg').className = 'msg err'; }
+  $('botSend').disabled = false;
+};
+
+// ── Uploaden ───────────────────────────────────────────────────────────────
+let upType = 'in_person';
+$('upType').onclick = (e) => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  upType = b.dataset.v; [...$('upType').children].forEach((x) => x.classList.toggle('on', x === b));
+};
+$('uploadBtn').onclick = async () => {
+  $('upMsg').textContent = ''; $('upMsg').className = 'msg'; $('upProg').hidden = true; $('upModal').hidden = false;
+  try { await loadContext(); } catch (e) { $('upMsg').textContent = 'Kon je account niet laden: ' + e.message; $('upMsg').className = 'msg err'; }
+};
+function mediaDuration(file) {
+  return new Promise((resolve) => {
+    const el = document.createElement(file.type.startsWith('video') ? 'video' : 'audio');
+    const url = URL.createObjectURL(file);
+    const done = (v) => { URL.revokeObjectURL(url); resolve(v); };
+    el.preload = 'metadata';
+    el.onloadedmetadata = () => done(isFinite(el.duration) ? Math.round(el.duration) : null);
+    el.onerror = () => done(null);
+    setTimeout(() => done(null), 8000);
+    el.src = url;
+  });
+}
+function putWithProgress(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('PUT', url);
+    x.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    x.setRequestHeader('x-upsert', 'false');
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => (x.status < 300 ? resolve() : reject(new Error('upload ' + x.status)));
+    x.onerror = () => reject(new Error('netwerkfout tijdens upload'));
+    x.send(file);
+  });
+}
+$('upForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const file = $('upFile').files[0];
+  if (!file) return;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!['m4a', 'mp3', 'wav', 'webm', 'mp4', 'aac', 'ogg'].includes(ext)) { $('upMsg').textContent = 'Dit bestandstype wordt niet ondersteund.'; $('upMsg').className = 'msg err'; return; }
+  $('upSend').disabled = true; $('upMsg').className = 'msg'; $('upMsg').textContent = 'Voorbereiden…';
+  $('upProg').hidden = false; $('upProg').firstElementChild.style.width = '0%';
+  try {
+    const dur = await mediaDuration(file);
+    const started = new Date((file.lastModified || Date.now()) - (dur || 0) * 1000);
+    const start = await ingest({ action: 'start', org_id: $('upOrg').value || undefined, recording_type: upType, title: $('upTitle').value.trim() || null, started_at: started.toISOString(), ext });
+    $('upMsg').textContent = 'Uploaden…';
+    await putWithProgress(start.upload_url, file, (p) => { $('upProg').firstElementChild.style.width = Math.round(p * 100) + '%'; });
+    await ingest({ action: 'complete', recording_id: start.recording_id, duration_seconds: dur || undefined, ended_at: dur ? new Date(started.getTime() + dur * 1000).toISOString() : undefined });
+    $('upMsg').textContent = 'Verstuurd. Je krijgt het verslag per mail zodra het verwerkt is.'; $('upMsg').className = 'msg ok';
+    $('upFile').value = ''; $('upTitle').value = '';
+    selected = start.recording_id;
+    loadList();
+  } catch (err) { $('upMsg').textContent = 'Uploaden lukte niet: ' + err.message; $('upMsg').className = 'msg err'; }
+  $('upSend').disabled = false;
+};
+
+// ── Algemeen ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.overlay').forEach((o) => {
+  o.addEventListener('click', (e) => { if (e.target === o || e.target.closest('[data-close]')) o.hidden = true; });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.overlay').forEach((o) => { o.hidden = true; }); });
+$('dlBtn').onclick = () => { $('dlModal').hidden = false; };
+$('avatarBtn').onclick = (e) => { e.stopPropagation(); $('menu').hidden = !$('menu').hidden; };
+document.addEventListener('click', (e) => { if (!e.target.closest('#menu')) $('menu').hidden = true; });
+$('logoutBtn').onclick = () => sb.auth.signOut();
+
+$('loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('loginErr').textContent = ''; $('loginBtn').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) $('loginErr').textContent = 'Inloggen mislukt. Controleer je e-mailadres en wachtwoord.';
+  $('loginBtn').disabled = false;
+};
+
+function enter(session) {
+  const u = session.user, name = u.user_metadata?.full_name || u.email.split('@')[0];
+  const parts = name.replace(/[._-]+/g, ' ').trim().split(/\s+/);
+  $('avatarBtn').textContent = ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || 'U';
+  $('whoName').textContent = name; $('whoMail').textContent = u.email;
+  show('app');
+  loadList();
+}
+let current; // undefined tot de eerste auth-gebeurtenis, zodat ook "geen sessie" het loginscherm toont
+sb.auth.onAuthStateChange((_e, session) => {
+  const id = session?.user?.id || null;
+  if (id === current) return;
+  current = id;
+  if (session) enter(session); else { all = []; selected = null; ctx = null; show('login'); }
+});
+sb.auth.getSession().then(({ data }) => {
+  if (current !== undefined) return;
+  current = data.session?.user?.id || null;
+  if (data.session) enter(data.session); else show('login');
+}).catch(() => { if (current === undefined) { current = null; show('login'); } });
 </script>
 </body>
 </html>
