@@ -38,7 +38,7 @@ const MEETING_PROCESSES = [
 function createWindow() {
   win = new BrowserWindow({
     width: 420,
-    height: 700,
+    height: 760, // huisstijl (okt 2026): hoofdscherm past zonder scrollen
     resizable: false,
     show: true,
     webPreferences: {
