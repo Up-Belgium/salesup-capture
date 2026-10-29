@@ -8,18 +8,19 @@
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "simulator": false, "image": "latest" },
+      "ios": { "simulator": false, "image": "sdk-56" },
       "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
-      "ios": { "image": "latest" }
+      "ios": { "image": "sdk-56" }
     }
   },
   "submit": {
     "production": {
-      "android": { "track": "production", "releaseStatus": "draft" }
+      "android": { "track": "production", "releaseStatus": "draft" },
+      "ios": { "ascAppId": "6784140388" }
     }
   }
 }
