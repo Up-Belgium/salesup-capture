@@ -16,6 +16,7 @@
   "build": {
     "appId": "be.salesup.capture.desktop",
     "productName": "salesUp Capture",
+    "files": ["**/*", "!tools/**", "!sign-win.sh", "!SIGNING*.md", "!README.md", "!download/**", "!**/.DS_Store"],
     "mac": {
       "category": "public.app-category.business",
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
