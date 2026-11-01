@@ -537,7 +537,21 @@ function Recorder({ session }: { session: Session }) {
   }
 
   const start = useCallback(async (opts?: { fromDeepLink?: boolean; resume?: boolean }) => {
-    if (recordingActive.current) return; // al bezig
+    if (recordingActive.current) {
+      if (phaseRef.current === 'recording') return; // al bezig
+      recordingActive.current = false; // achtergebleven vlag van een vorige opname: niet stil blijven weigeren
+    }
+    try {
+      await startRecording(opts);
+    } catch (e: any) {
+      recordingActive.current = false;
+      if (timer.current) { clearInterval(timer.current); timer.current = null; }
+      setPhase('idle');
+      Alert.alert('Opname starten mislukt', e?.message || String(e));
+    }
+  }, []);
+
+  const startRecording = async (opts?: { fromDeepLink?: boolean; resume?: boolean }) => {
     if (!consentRef.current) {
       Alert.alert('Eerst toestemming', 'Zet bij Instellingen "Ik informeer mijn gesprekspartners" aan om te kunnen opnemen.');
       return;
@@ -582,7 +596,7 @@ function Recorder({ session }: { session: Session }) {
     setSeconds(groupDurRef.current); setPhase('recording'); setMessage('');
     if (timer.current) clearInterval(timer.current);
     timer.current = setInterval(() => { if (!pausedRef.current) setSeconds((s) => s + 1); tickRef.current(); }, 1000);
-  }, []);
+  };
 
   // ── Deep link: salesupcapture://record → meteen opnemen ──────────────────
   const handleUrl = useCallback((url: string | null) => {
