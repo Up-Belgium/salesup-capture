@@ -543,11 +543,19 @@ function Recorder({ session }: { session: Session }) {
     }
     try {
       await startRecording(opts);
-    } catch (e: any) {
+    } catch {
+      // Vlak na het openen van de app is de iOS-audiosessie soms nog niet klaar: de eerste poging faalt,
+      // een tweede lukt wel (3/11, build 21). Daarom één keer zelf opnieuw proberen vóór we een melding tonen.
       recordingActive.current = false;
-      if (timer.current) { clearInterval(timer.current); timer.current = null; }
-      setPhase('idle');
-      Alert.alert('Opname starten mislukt', e?.message || String(e));
+      await new Promise((r) => setTimeout(r, 600));
+      try {
+        await startRecording(opts);
+      } catch (e: any) {
+        recordingActive.current = false;
+        if (timer.current) { clearInterval(timer.current); timer.current = null; }
+        setPhase('idle');
+        Alert.alert('Opname starten mislukt', e?.message || String(e));
+      }
     }
   }, []);
 
