@@ -6,7 +6,7 @@
 // samenvattingsmail kort na de meeting vertrekt.
 //
 // Modi:  POST {} (batch, default 10, max 25) | { recording_id } | { limit }
-// Secrets: DEEPGRAM_API_KEY
+// Secrets: DEEPGRAM_API_KEY (+ optioneel TRAINING_URL/TRAINING_SERVICE_ROLE_KEY voor de woordenlijst)
 // ============================================================================
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -28,6 +28,54 @@ const BUCKET = 'recordings'
 // EU-endpoint (verwerking binnen de EU, geen fallback) + mip_opt_out=true (geen
 // bewaring bij Deepgram voor modelverbetering). GDPR — subverwerkersoverzicht okt 2026.
 const DEEPGRAM_URL = 'https://api.eu.deepgram.com/v1/listen?model=nova-3&smart_format=true&diarize=true&language=multi&mip_opt_out=true'
+
+// Woordenlijst van de trainingsklant (pagina Kwaliteitsregels, module sales of beide) als
+// Deepgram-keyterms (nov 2026): namen, merken, producten, acties en concurrenten worden beter
+// herkend. Zelfde regels als transcribe-genesys in het trainingsproject: verboden formuleringen
+// NIET (een geboost woord kan opduiken waar het niet gezegd werd), max 50 termen en ~1500 tekens.
+// Leest het trainingsproject met dezelfde secrets als bridge-to-training; zonder secrets of bij een
+// fout transcriberen we gewoon zonder woordenlijst.
+const KEYTERM_MAX = 50
+const KEYTERM_CHARS = 1500
+
+function deepgramUrl(keyterms: string[]): string {
+  return DEEPGRAM_URL + keyterms.map((t) => `&keyterm=${encodeURIComponent(t)}`).join('')
+}
+
+// org_id (Capture) → keyterms van de gekoppelde trainingsklant (organizations.training_client_id).
+async function loadKeytermsByOrg(sb: any, orgIds: string[]): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {}
+  const trainingUrl = (Deno.env.get('TRAINING_URL') ?? '').trim()
+  const trainingKey = (Deno.env.get('TRAINING_SERVICE_ROLE_KEY') ?? '').trim()
+  if (!trainingUrl || !trainingKey || orgIds.length === 0) return out
+  try {
+    const { data: orgs } = await sb.from('organizations').select('id, training_client_id').in('id', orgIds)
+    const clientByOrg: Record<string, string> = {}
+    for (const o of orgs ?? []) if (o.training_client_id) clientByOrg[o.id] = o.training_client_id
+    const clientIds = [...new Set(Object.values(clientByOrg))]
+    if (clientIds.length === 0) return out
+    const training = createClient(trainingUrl, trainingKey)
+    const { data, error } = await training.from('training_quality_lexicon')
+      .select('client_id, term, term_type').in('client_id', clientIds)
+      .or('module.eq.sales,module.is.null').neq('term_type', 'verboden').order('term').limit(500)
+    if (error) { console.error('woordenlijst', error.message); return out }
+    const byClient: Record<string, string[]> = {}
+    const seen: Record<string, Set<string>> = {}
+    const used: Record<string, number> = {}
+    for (const r of data ?? []) {
+      const term = String(r.term ?? '').trim().slice(0, 100)
+      if (!term) continue
+      const set = (seen[r.client_id] ??= new Set())
+      const list = (byClient[r.client_id] ??= [])
+      if (set.has(term.toLowerCase()) || list.length >= KEYTERM_MAX || (used[r.client_id] ?? 0) + term.length > KEYTERM_CHARS) continue
+      set.add(term.toLowerCase()); list.push(term); used[r.client_id] = (used[r.client_id] ?? 0) + term.length
+    }
+    for (const [orgId, clientId] of Object.entries(clientByOrg)) if (byClient[clientId]?.length) out[orgId] = byClient[clientId]
+  } catch (e) {
+    console.error('woordenlijst', String(e).slice(0, 200))
+  }
+  return out
+}
 
 interface Segment { speaker: string | null; start_s: number | null; end_s: number | null; text: string }
 
@@ -81,8 +129,11 @@ Deno.serve(async (req) => {
     todo = data ?? []
   }
 
+  const keytermsByOrg = await loadKeytermsByOrg(sb, [...new Set(todo.map((r: any) => r.org_id).filter(Boolean))] as string[])
+
   let transcribed = 0, failed = 0
   for (const rec of todo) {
+    const keyterms = keytermsByOrg[rec.org_id] ?? []
     try {
       await sb.from('recordings').update({ status: 'transcribing' }).eq('id', rec.id)
 
@@ -103,11 +154,17 @@ Deno.serve(async (req) => {
         const { data: blob, error: dlErr } = await sb.storage.from(BUCKET).download(path)
         if (dlErr || !blob) throw new Error(`storage download (${path}): ${dlErr?.message ?? 'leeg bestand'}`)
 
-        const res = await fetch(DEEPGRAM_URL, {
+        const post = (terms: string[]) => fetch(deepgramUrl(terms), {
           method: 'POST',
           headers: { Authorization: `Token ${dgKey}`, 'Content-Type': blob.type || 'audio/mp4' },
           body: blob,
         })
+        let res = await post(keyterms)
+        // Weigert Deepgram de keyterms (bv. niet ondersteund voor deze taal/model), dan zonder opnieuw.
+        if (!res.ok && res.status === 400 && keyterms.length) {
+          console.error('Deepgram weigerde keyterms:', (await res.text()).slice(0, 200))
+          res = await post([])
+        }
         if (!res.ok) throw new Error(`Deepgram ${res.status}: ${(await res.text()).slice(0, 200)}`)
         const dg = await res.json()
 
@@ -149,7 +206,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  console.log(`transcribe-recordings: todo=${todo.length} ok=${transcribed} failed=${failed}`)
+  console.log(`transcribe-recordings: todo=${todo.length} ok=${transcribed} failed=${failed} woordenlijst_orgs=${Object.keys(keytermsByOrg).length}`)
   return json({ ok: true, processed: todo.length, transcribed, failed })
 })
 
